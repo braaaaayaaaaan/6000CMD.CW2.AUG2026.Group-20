@@ -10,36 +10,33 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-from pathlib import Path
 from datetime import timedelta
+import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-from .environment import database_from_environment, required_environment
+from .environment import (
+    boolean_environment,
+    database_from_environment,
+    integer_environment,
+    list_environment,
+    origins_environment,
+    path_environment,
+    required_environment,
+)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Explicit process/PowerShell variables take precedence over the local file.
+# Explicit process variables take precedence over the local file.
 # Do not expand ${...} inside credentials such as generated passwords.
-load_dotenv(BASE_DIR / ".env", override=False, interpolate=False)
+if boolean_environment("DJANGO_READ_DOT_ENV", default=True):
+    load_dotenv(BASE_DIR / ".env", override=False, interpolate=False)
 
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = required_environment("DJANGO_SECRET_KEY")
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = [
-    # For laptop access (Backend)
-    "127.0.0.1",
-    # For iPhone access (Backend)
-    "192.168.0.216",
-]
+DEBUG = boolean_environment("DJANGO_DEBUG", default=False)
+ALLOWED_HOSTS = list_environment("DJANGO_ALLOWED_HOSTS", default=("localhost", "127.0.0.1", "[::1]"))
 
 
 # Application definition
@@ -66,6 +63,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "backend.middleware.MediaFramePolicyMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -92,11 +90,7 @@ WSGI_APPLICATION = "backend.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {"default": database_from_environment()}
-
-# Source - https://stackoverflow.com/a
-# Posted by Aswin Murugesh, modified by community. See post 'Timeline' for change history
-# Retrieved 2025-11-10, License - CC BY-SA 3.0
+DATABASES = {"default": database_from_environment(base_dir=BASE_DIR)}
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -125,7 +119,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = "UTC"
+TIME_ZONE = os.environ.get("DJANGO_TIME_ZONE", "UTC")
 
 USE_I18N = True
 
@@ -136,6 +130,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = "static/"
+STATIC_ROOT = path_environment("DJANGO_STATIC_ROOT", BASE_DIR, "staticfiles")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -152,24 +147,18 @@ REST_FRAMEWORK = {
     ],
 }
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    # For laptop access (Frontend)
-    "http://localhost:3000",
-    # For iPhone access (Frontend)
-    "http://192.168.0.216:3000",
-]
+CORS_ALLOWED_ORIGINS = origins_environment("CORS_ALLOWED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = origins_environment("CSRF_TRUSTED_ORIGINS")
 
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ROOT = path_environment("DJANGO_MEDIA_ROOT", BASE_DIR, "media")
+MEDIA_FRAME_ALLOWED_ORIGINS = origins_environment("MEDIA_FRAME_ALLOWED_ORIGINS")
 
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
-
-X_FRAME_OPTIONS = "ALLOW-FROM http://localhost:3000"
+# Admin/API pages cannot be framed. Media previews have their own origin policy.
+X_FRAME_OPTIONS = "DENY"
 
 AUTH_USER_MODEL = "user.User"
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=40),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=integer_environment("JWT_ACCESS_TOKEN_MINUTES", 40)),
 }

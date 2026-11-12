@@ -52,6 +52,7 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 media
+/backend/staticfiles/
 
 # Byte-compiled / optimized / DLL files
 *.py[cod]
