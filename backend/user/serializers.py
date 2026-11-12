@@ -7,14 +7,14 @@ from rest_framework import serializers
 
 from .models import User
 from .permissions import admitted_email
-from .security import reserve_email, send_verification
+from .security import reserve_email, send_verification, verify_sensitive_password
 
 
 class UserSerializer(serializers.HyperlinkedModelSerializer):
     email = serializers.EmailField(required=True)
-    current_password = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=256)
-    password1 = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=256)
-    password2 = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=256)
+    current_password = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=256, trim_whitespace=False)
+    password1 = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=256, trim_whitespace=False)
+    password2 = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=256, trim_whitespace=False)
 
     class Meta:
         model = User
@@ -24,6 +24,8 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 
     @sensitive_variables()
     def validate(self, attrs):
+        if self.instance and "username" in attrs and attrs["username"] != self.instance.username:
+            raise serializers.ValidationError({"username": "Login usernames cannot be changed."})
         forbidden = {"is_staff", "is_superuser", "user_permissions", "token_version", "email_verified",
                      "mfa_secret", "mfa_recovery_hashes", "is_active"}
         if forbidden.intersection(self.initial_data):
@@ -42,7 +44,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         if not self.instance and (not pw1 or not pw2):
             raise serializers.ValidationError({"password": "Password is required."})
         if self.instance and (pw1 or pw2 or email_changed):
-            if not self.instance.check_password(attrs.get("current_password", "")):
+            if not verify_sensitive_password(self.instance, attrs.get("current_password", "")):
                 raise serializers.ValidationError({"current_password": "The current password is required and must be correct."})
         if pw1 or pw2:
             if pw1 != pw2:
@@ -59,7 +61,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
     @sensitive_variables()
     def update(self, instance, validated_data):
         email_changed = "email" in validated_data and validated_data["email"] != instance.email.lower()
-        for attr in ("username", "first_name", "last_name", "email"):
+        for attr in ("first_name", "last_name", "email"):
             if attr in validated_data:
                 setattr(instance, attr, validated_data[attr])
         if validated_data.get("password1"):

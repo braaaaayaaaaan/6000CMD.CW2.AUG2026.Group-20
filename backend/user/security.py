@@ -132,6 +132,18 @@ def clear_failures(user):
 
 
 @sensitive_variables()
+def verify_sensitive_password(user, password):
+    # Caller holds the row lock and commits before reporting validation errors.
+    if locked_out(user):
+        return False
+    if not user.check_password(password):
+        failed_attempt(user)
+        return False
+    clear_failures(user)
+    return True
+
+
+@sensitive_variables()
 def password_user(username, password):
     # Commit failures before returning; raising inside atomic would undo lockouts.
     with transaction.atomic():
@@ -152,7 +164,10 @@ def password_user(username, password):
 @sensitive_variables()
 def challenge_for(user, admin_session=False, purpose="login"):
     user.challenge_nonce = uuid.uuid4()
-    user.save(update_fields=["challenge_nonce"])
+    # Pending seeds belong only to this challenge, never its predecessor.
+    user.mfa_pending_secret = ""
+    user.mfa_pending_at = None
+    user.save(update_fields=["challenge_nonce", "mfa_pending_secret", "mfa_pending_at"])
     return signing.dumps({"user": str(user.pk), "nonce": str(user.challenge_nonce),
                           "version": user.token_version, "auth": user.get_session_auth_hash(),
                           "admin": bool(admin_session), "purpose": purpose}, salt="mfa-challenge")

@@ -50,7 +50,7 @@ export default function PreviewAssetMedia({ asset, compact = false, modelOptions
       <Script id="model-viewer" type="module"
         src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js"
         onError={() => setScriptError(true)} />
-      <model-viewer alt={asset.name} src={src} onError={mediaFailed} camera-controls="" auto-rotate={compact ? undefined : ""}
+      <model-viewer alt={asset.name} src={src} with-credentials="" onError={mediaFailed} camera-controls="" auto-rotate={compact ? undefined : ""}
         touch-action="pan-y" environment-image="neutral"
         exposure={modelNumber(modelOptions.exposure)}
         shadow-intensity={modelNumber(modelOptions.shadowIntensity)}

@@ -11,22 +11,30 @@ export default function MfaChallenge({ challenge, enrolmentRequired, passwordReq
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [password, setPassword] = useState("");
+  const [enrolmentChallenge, setEnrolmentChallenge] = useState(challenge);
+  const [useRecoveryCode, setUseRecoveryCode] = useState(false);
+  const needsPasswordForSetup = passwordRequired && enrolmentRequired && !setup;
   const validChallenge = typeof challenge === "string" && challenge.length > 0 && typeof enrolmentRequired === "boolean";
   useEffect(() => {
-    if (!validChallenge || !enrolmentRequired || initialSetup) return;
+    if (!validChallenge || !enrolmentRequired || initialSetup || passwordRequired) return;
     const controller = new AbortController();
     api.post("/api/account/mfa/enrol/", { challenge }, { signal: controller.signal })
       .then(({ data }) => { if (!controller.signal.aborted) setSetup(data); })
       .catch((failure) => { if (!controller.signal.aborted) setError(errorMessage(failure)); });
     return () => controller.abort();
-  }, [challenge, enrolmentRequired, initialSetup, validChallenge]);
+  }, [challenge, enrolmentRequired, initialSetup, validChallenge, passwordRequired]);
 
   async function submit(event) {
     event.preventDefault();
     if (saving) return;
     setSaving(true); setError("");
     try {
-      const { data } = await api.post("/api/account/mfa/" + (enrolmentRequired ? "confirm/" : "verify/"), { challenge, code, ...(passwordRequired ? { password } : {}) });
+      if (needsPasswordForSetup) {
+        const { data } = await api.post("/api/account/mfa/enrol/", { challenge, password });
+        setSetup(data); setEnrolmentChallenge(data.challenge); setPassword("");
+        return;
+      }
+      const { data } = await api.post("/api/account/mfa/" + (enrolmentRequired ? "confirm/" : "verify/"), { challenge: enrolmentChallenge, code, ...(passwordRequired && !enrolmentRequired ? { password } : {}) });
       setCode(""); setPassword("");
       onComplete(data);
     } catch (failure) { setError(errorMessage(failure)); }
@@ -40,8 +48,8 @@ export default function MfaChallenge({ challenge, enrolmentRequired, passwordReq
 
   return <form method="post" onSubmit={submit}><Stack gap="3" textAlign="left">
     <Heading size="lg" color="blue.700" textAlign="center">{enrolmentRequired ? "Authenticator Setup" : "Authenticator Verification"}</Heading>
-    <Text color="fg.muted" fontSize="sm" textAlign="center">{enrolmentRequired ? "Scan the QR code with your authenticator app, then enter its six-digit code." : "Enter the current six-digit code from your authenticator app."}</Text>
-    {enrolmentRequired && !setup && !error && <Text role="status" textAlign="center">Preparing your QR code...</Text>}
+    <Text color="fg.muted" fontSize="sm" textAlign="center">{needsPasswordForSetup ? "Confirm your account password to securely prepare your QR code." : enrolmentRequired ? "Scan the QR code with your authenticator app, then enter its six-digit code." : "Enter the current code from your authenticator app, or use a previously issued recovery code."}</Text>
+    {enrolmentRequired && !setup && !error && !needsPasswordForSetup && <Text role="status" textAlign="center">Preparing your QR code...</Text>}
     <Grid templateColumns={setup ? { base: "minmax(0, 1fr)", md: "minmax(0, 1fr) minmax(0, 1fr)" } : "minmax(0, 1fr)"} gap={{ base: "4", md: "6" }} alignItems="center">
     {setup && <Stack gap="2" minW="0">
       <Box p="2" bg="white" borderWidth="1px" borderColor="gray.300" borderRadius="lg" alignSelf="center" maxW="full">
@@ -54,15 +62,16 @@ export default function MfaChallenge({ challenge, enrolmentRequired, passwordReq
       </Box>
     </Stack>}
     <Stack gap="3" minW="0">
-    {passwordRequired && <Field.Root gap="1"><Field.Label>Account Password</Field.Label>
+    {passwordRequired && (!enrolmentRequired || needsPasswordForSetup) && <Field.Root gap="1"><Field.Label>Account Password</Field.Label>
       <PasswordInput required autoComplete="current-password" borderColor="gray.300" maxLength={256} value={password} onChange={(event) => setPassword(event.target.value)} disabled={saving} />
       <Field.HelperText>Confirm your password to finish signing in securely.</Field.HelperText>
     </Field.Root>}
-    <Field.Root gap="1"><Field.Label>Authenticator Code</Field.Label>
-      <Input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} borderColor="gray.300" placeholder="6-digit code" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} required disabled={saving || (enrolmentRequired && !setup)} />
-    </Field.Root>
+    {!needsPasswordForSetup && <Field.Root gap="1"><Field.Label>{useRecoveryCode ? "Previously Issued Recovery Code" : "Authenticator Code"}</Field.Label>
+      <Input autoComplete="one-time-code" inputMode={useRecoveryCode ? "text" : "numeric"} pattern={useRecoveryCode ? undefined : "[0-9]{6}"} minLength={useRecoveryCode ? 1 : 6} maxLength={useRecoveryCode ? 64 : 6} borderColor="gray.300" placeholder={useRecoveryCode ? "Recovery code" : "6-digit code"} value={code} onChange={(event) => setCode(useRecoveryCode ? event.target.value : event.target.value.replace(/\D/g, "").slice(0, 6))} required disabled={saving || (enrolmentRequired && !setup)} />
+    </Field.Root>}
+    {!enrolmentRequired && <Button type="button" variant="plain" color="blue.700" onClick={() => { setUseRecoveryCode(!useRecoveryCode); setCode(""); }} disabled={saving}>{useRecoveryCode ? "Use authenticator app" : "Use a previously issued recovery code"}</Button>}
     {error && <Text role="alert" color="red.600">{error}</Text>}
-    <Button type="submit" variant="outline" bg="blue.700" color="white" loading={saving} loadingText="Verifying..." disabled={saving || (enrolmentRequired && !setup)}>{enrolmentRequired ? "Verify and Continue" : "Verify and Sign In"}</Button>
+    <Button type="submit" variant="outline" bg="blue.700" color="white" loading={saving} loadingText="Verifying..." disabled={saving || (enrolmentRequired && !setup && !needsPasswordForSetup)}>{needsPasswordForSetup ? "Continue to QR Setup" : enrolmentRequired ? "Verify and Continue" : "Verify and Sign In"}</Button>
     {onCancel && <Button type="button" variant="outline" borderColor="blue.700" color="blue.700" onClick={onCancel} disabled={saving}>{cancelLabel}</Button>}
     </Stack>
     </Grid>

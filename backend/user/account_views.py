@@ -32,7 +32,7 @@ from .security import (
     GENERIC_EMAIL_MESSAGE, activate_mfa, challenge_for, challenge_user, clear_auth_cookies,
     consume_factor, event, failed_attempt, issue_credentials, locked_out, password_user, profile,
     reserve_email, send_password_reset, send_verification, set_auth_cookies, start_enrolment,
-    session_record,
+    session_record, verify_sensitive_password,
 )
 from .throttling import AccountRateThrottle
 
@@ -219,9 +219,24 @@ class ResetPasswordView(AccountEndpoint):
 class MfaEnrolView(AccountEndpoint):
     @sensitive_variables()
     def post(self, request):
+        accepted = True
         with transaction.atomic():
             user, payload = challenge_user(text_field(request, "challenge", 2048))
-            return Response(start_enrolment(user, replace=payload.get("purpose") == "replace"))
+            if user.mfa_enabled and payload.get("purpose") != "replace":
+                raise ValidationError("MFA is already enabled.")
+            if payload.get("purpose") == "email-verify":
+                accepted = verify_sensitive_password(user, text_field(request, "password", 256))
+                if accepted:
+                    challenge = challenge_for(user, purpose="enrol")
+            elif payload.get("purpose") in ("login", "enrol", "replace"):
+                challenge = text_field(request, "challenge", 2048)
+            else:
+                raise AuthenticationFailed("Start sign-in again.")
+            if accepted:
+                result = {"challenge": challenge, **start_enrolment(user, replace=payload.get("purpose") == "replace")}
+        if not accepted:
+            raise AuthenticationFailed("Unable to verify your password. Try again later.")
+        return Response(result)
 
 
 class MfaVerifyView(AccountEndpoint):
@@ -232,6 +247,8 @@ class MfaVerifyView(AccountEndpoint):
         code = text_field(request, "code", 64)
         with transaction.atomic():
             user, payload = challenge_user(text_field(request, "challenge", 2048))
+            if self.enrol and payload.get("purpose") == "email-verify":
+                raise ValidationError("Verify your password before starting authenticator setup.")
             if self.enrol and user.mfa_enabled and payload.get("purpose") != "replace":
                 raise ValidationError("MFA is already enabled.")
             if not self.enrol and payload.get("purpose") not in ("login", "email-verify"):

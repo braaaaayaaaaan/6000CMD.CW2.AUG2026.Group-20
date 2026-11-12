@@ -54,6 +54,7 @@ class Asset(models.Model):
     uploaded_by = models.CharField(max_length=150)
     file_type = models.CharField(max_length=100)
     file_size = models.FloatField()
+    sha256 = models.CharField(max_length=64, blank=True, editable=False)
     url = models.FileField(upload_to="uploads/")
     tags = models.ManyToManyField(Tags, related_name="assets", blank=True)
     version_no = models.IntegerField(default=1, null=False)

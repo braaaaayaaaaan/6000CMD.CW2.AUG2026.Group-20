@@ -156,7 +156,7 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_RATES": {
         "anon": "100/hour", "user": "3000/hour", "login": "10/minute",
-        "signup": "10/hour", "uploads": "60/hour", "refresh": "60/minute",
+        "sensitive": "10/minute", "signup": "10/hour", "uploads": "60/hour", "refresh": "60/minute",
         "recovery": "5/hour", "verification": "5/hour", "mfa": "10/minute",
     },
     "NUM_PROXIES": integer_environment("AUTH_NUM_PROXIES", 0, minimum=0, maximum=20),
@@ -168,6 +168,15 @@ CORS_ALLOW_CREDENTIALS = True
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = path_environment("DJANGO_MEDIA_ROOT", BASE_DIR, "media")
+# Private uploads must never be collected or served as static/public files.
+for public_root in (STATIC_ROOT, BASE_DIR.parent / "frontend" / "public"):
+    if MEDIA_ROOT.resolve().is_relative_to(public_root.resolve()) or public_root.resolve().is_relative_to(MEDIA_ROOT.resolve()):
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured("DJANGO_MEDIA_ROOT must be separate from static and frontend public directories.")
+STORAGES = {
+    "default": {"BACKEND": "asset.storage.PrivateAssetStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 MEDIA_FRAME_ALLOWED_ORIGINS = origins_environment("MEDIA_FRAME_ALLOWED_ORIGINS")
 
 # Admin/API pages cannot be framed. Media previews have their own origin policy.
@@ -250,5 +259,10 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "handlers": {"console": {"class": "logging.StreamHandler"}},
-    "loggers": {"dam.audit": {"handlers": ["console"], "level": "INFO", "propagate": False}},
+    "filters": {"media_tokens": {"()": "backend.middleware.RedactSignedMediaTokens"}},
+    "loggers": {
+        "dam.audit": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "django.server": {"handlers": ["console"], "filters": ["media_tokens"], "level": "INFO", "propagate": False},
+        "django.request": {"handlers": ["console"], "filters": ["media_tokens"], "level": "WARNING", "propagate": False},
+    },
 }

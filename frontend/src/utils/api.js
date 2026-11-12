@@ -90,6 +90,7 @@ export async function downloadAsset(asset, filename) {
   const url = new URL(data.url, API_BASE_URL + "/");
   url.searchParams.set("download", "1");
   link.href = url.href;
+  link.referrerPolicy = "no-referrer";
   link.download = filename || asset.name + "." + asset.file_type;
   document.body.appendChild(link);
   link.click();
