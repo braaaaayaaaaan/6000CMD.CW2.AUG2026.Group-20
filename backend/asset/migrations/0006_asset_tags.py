@@ -3,6 +3,23 @@
 from django.db import migrations, models
 
 
+def preserve_links(apps, schema_editor):
+    connection = schema_editor.connection
+    old_table = "asset_assettags"
+    if old_table not in connection.introspection.table_names():
+        return
+    Asset = apps.get_model("asset", "Asset")
+    through = Asset._meta.get_field("tags").remote_field.through
+    quoted = schema_editor.quote_name(old_table)
+    with connection.cursor() as cursor:
+        cursor.execute(f'SELECT "asset_id", "tag_id" FROM {quoted}')
+        while rows := cursor.fetchmany(1000):
+            through.objects.using(connection.alias).bulk_create(
+                [through(asset_id=asset, tags_id=tag) for asset, tag in rows], ignore_conflicts=True,
+            )
+    schema_editor.execute(f"DROP TABLE {quoted}")
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -15,4 +32,5 @@ class Migration(migrations.Migration):
             name='tags',
             field=models.ManyToManyField(to='asset.tags'),
         ),
+        migrations.RunPython(preserve_links),
     ]

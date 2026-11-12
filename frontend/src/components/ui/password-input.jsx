@@ -37,12 +37,8 @@ export const PasswordInput = React.forwardRef(
         endElement={
           <VisibilityTrigger
             disabled={rest.disabled}
-            onPointerDown={(e) => {
-              if (rest.disabled) return
-              if (e.button !== 0) return
-              e.preventDefault()
-              setVisible(!visible)
-            }}
+            onClick={() => setVisible(!visible)}
+            aria-pressed={visible}
           >
             {visible ? visibilityIcon.off : visibilityIcon.on}
           </VisibilityTrigger>
@@ -63,7 +59,7 @@ const VisibilityTrigger = React.forwardRef(
   function VisibilityTrigger(props, ref) {
     return (
       <IconButton
-        tabIndex={-1}
+        type='button'
         ref={ref}
         me='-2'
         aspectRatio='square'

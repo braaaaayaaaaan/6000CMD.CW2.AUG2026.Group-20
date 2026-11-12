@@ -1,127 +1,40 @@
-import {
-  Box,
-  Button,
-  CloseButton,
-  Dialog,
-  Grid,
-  Portal,
-  Heading,
-  Flex,
-} from "@chakra-ui/react";
+"use client";
+
+import { Box, Button, CloseButton, Dialog, Grid, Portal } from "@chakra-ui/react";
 import { useState } from "react";
-
-import { hsvaToHex } from "@uiw/color-convert";
-import Sketch from "@uiw/react-color-sketch";
-
+import { hsvaToHexa } from "@uiw/color-convert";
 import PreviewAssetCardv2 from "./PreviewAssetCardv2";
+import PreviewAssetMedia from "./PreviewAssetMedia";
 
-import PreviewImageAsset from "./PreviewImageAsset";
-import PreviewVideoAsset from "./PreviewVideoAsset";
-
-export default function PreviewAssetModal({ asset }) {
+export default function PreviewAssetModal({ asset, onAssetDeleted, onAssetUpdated }) {
+  const [open, setOpen] = useState(false);
   const [exposure, setExposure] = useState(1);
   const [shadowIntensity, setShadowIntensity] = useState(1);
   const [shadowSoftness, setShadowSoftness] = useState(1);
-
-  const [hsva, setHsva] = useState({ h: 0, s: 0, v: 100, a: 0 });
-  const [disableAlpha, setDisableAlpha] = useState(false);
-
+  const [hsva, setHsva] = useState({ h: 0, s: 0, v: 100, a: 1 });
+  const modelOptions = { exposure, shadowIntensity, shadowSoftness, backgroundColor: hsvaToHexa(hsva) };
   return (
-    <>
-      {/* Button: Preview - > Opens */}
-      <Dialog.Root size="cover" placement="center">
-        <Dialog.Trigger asChild>
-          <Button variant="surface">Preview</Button>
-        </Dialog.Trigger>
-        <Portal>
-          <Dialog.Backdrop />
-          <Dialog.Positioner>
-            <Dialog.Content>
-              <Dialog.Body>
-                <Flex
-                  direction="column"
-                  gap="10px"
-                  padding="10px"
-                  alignItems="flex-start"
-                >
-                  <Box>
-                    <Heading size="2xl" fontWeight="bold" marginTop="20px">
-                      {asset.name}
-                    </Heading>
-                  </Box>
-
-                  <Box>
-                    <Grid templateColumns="4fr 3fr" gap="20px">
-                      <Box
-                        borderWidth="1px"
-                        rounded="md"
-                        bg={
-                          asset.file_type === "png" ||
-                          asset.file_type === "jpg" ||
-                          asset.file_type === "mp4"
-                            ? "gray.100"
-                            : "transparent"
-                        }
-                      >
-                        {/* Display 3D models */}
-                        {asset.file_type === "glb" && (
-                          <model-viewer
-                            alt={asset.name}
-                            src={asset.url}
-                            shadow-intensity={shadowIntensity}
-                            shadow-softness={shadowSoftness}
-                            exposure={exposure}
-                            camera-controls
-                            auto-rotate
-                            touch-action="pan-y"
-                            environment-image="neutral"
-                            style={{
-                              width: "830px",
-                              height: "579px", //if full 580, small cosmetic issue
-                              borderRadius: "12px",
-                              backgroundColor: hsvaToHex(hsva),
-                            }}
-                          />
-                        )}
-
-                        {/* Display png and jpg images */}
-                        {(asset.file_type === "png" ||
-                          asset.file_type === "jpg") && (
-                          <PreviewImageAsset assetURL={asset.url} h="580px" w="830px"/>
-                        )}
-
-                        {/* Display mp4 */}
-                        {asset.file_type === "mp4" && (
-                          <PreviewVideoAsset assetURL={asset.url} h="580px" w="830px"/>
-                        )}
-                      </Box>
-
-                      <Box>
-                        <PreviewAssetCardv2
-                          asset={asset}
-                          exposure={exposure}
-                          shadowIntensity={shadowIntensity}
-                          shadowSoftness={shadowSoftness}
-                          hsva={hsva}
-                          onExposureChange={setExposure}
-                          onShadowIntensityChange={setShadowIntensity}
-                          onShadowSoftnessChange={setShadowSoftness}
-                          onHsvaChange={setHsva}
-                        />
-                      </Box>
-                    </Grid>
-                  </Box>
-                </Flex>
-
-                {/* Refactor this part (New UI) */}
-              </Dialog.Body>
-              <Dialog.CloseTrigger asChild>
-                <CloseButton size="sm" />
-              </Dialog.CloseTrigger>
-            </Dialog.Content>
-          </Dialog.Positioner>
-        </Portal>
-      </Dialog.Root>
-    </>
+    <Dialog.Root open={open} onOpenChange={({ open }) => setOpen(open)} size="cover" placement="center" lazyMount unmountOnExit>
+      <Dialog.Trigger asChild><Button variant="surface" size="sm">Preview</Button></Dialog.Trigger>
+      <Portal>
+        <Dialog.Backdrop /><Dialog.Positioner>
+          <Dialog.Content maxW="1600px" w="calc(100% - 2rem)">
+            <Dialog.Header><Dialog.Title overflowWrap="anywhere">{asset.name}</Dialog.Title></Dialog.Header>
+            <Dialog.Body pb="6">
+              <Grid templateColumns={{ base: "minmax(0, 1fr)", xl: "minmax(0, 4fr) minmax(0, 3fr)" }} gap="5">
+                <Box borderWidth="1px" rounded="lg" minW="0" h={{ base: "300px", md: "480px", xl: "580px" }}>
+                  <PreviewAssetMedia asset={asset} modelOptions={modelOptions} />
+                </Box>
+                <PreviewAssetCardv2 asset={asset} isOpen={open} {...modelOptions}
+                  hsva={hsva} onExposureChange={setExposure}
+                  onShadowIntensityChange={setShadowIntensity} onShadowSoftnessChange={setShadowSoftness}
+                  onHsvaChange={setHsva} onAssetDeleted={onAssetDeleted} onAssetUpdated={onAssetUpdated} />
+              </Grid>
+            </Dialog.Body>
+            <Dialog.CloseTrigger asChild><CloseButton /></Dialog.CloseTrigger>
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Portal>
+    </Dialog.Root>
   );
 }

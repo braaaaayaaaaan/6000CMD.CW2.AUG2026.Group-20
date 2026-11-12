@@ -1,385 +1,155 @@
-import { Button, Card, Tabs, DataList, NumberInput, Box, Dialog, Portal, CloseButton, Grid, Flex, Table, Text, } from "@chakra-ui/react";
-import { RxPinBottom, RxEyeOpen } from "react-icons/rx";
-import { useState, useEffect } from "react";
+"use client";
+
+import { Box, Button, Card, CloseButton, DataList, Dialog, Flex, Grid, NumberInput, Portal, Spinner, Stack, Table, Tabs, Text } from "@chakra-ui/react";
+import { useRef, useState } from "react";
 import Sketch from "@uiw/react-color-sketch";
-import useDownloader from "react-use-downloader";
+import { api, downloadAsset, errorMessage } from "@/utils/api";
+import { formatDateTime } from "@/utils/dateTime";
+import { toaster } from "@/styles/ui/toaster";
+import useBrowserSession from "@/hooks/useBrowserSession";
+import useApiResource from "@/hooks/useApiResource";
 import EditAssetModal from "../EditAssetModal";
 import UpdateAssetModal from "../UpdateAssetModal";
-import PreviewImageAsset from "./PreviewImageAsset";
-import PreviewVideoAsset from "./PreviewVideoAsset";
-import axios from "axios";
+import PreviewAssetMedia from "./PreviewAssetMedia";
 
 export default function PreviewAssetCardv2({
-  asset,
-  exposure,
-  shadowIntensity,
-  shadowSoftness,
-  hsva,
-  onExposureChange,
-  onShadowIntensityChange,
-  onShadowSoftnessChange,
-  onHsvaChange,
+  asset, isOpen = true, exposure, shadowIntensity, shadowSoftness, hsva,
+  onExposureChange, onShadowIntensityChange, onShadowSoftnessChange, onHsvaChange,
+  onAssetDeleted, onAssetUpdated,
 }) {
-  const BASE_API_DELETE = "http://127.0.0.1:8000/delete-asset-by-code/";
-  const BASE_FILEVER_URL = "http://127.0.0.1:8000/get-all-file-versions/";
-
-  // Handler to download asset files
-  const asset_code = asset.code;
-  const { download } = useDownloader();
-
-  const [allFiles, setAllFiles] = useState([]);
-
-  const [disableAlpha, setDisableAlpha] = useState(false);
-
-  // Only enable advanced settings for 3D models
-  const is3DModel = asset.file_type === "glb";
-
-  const DIALOG_WIDTH = "760px";
-  const DIALOG_HEIGHT = "460px";
-
+  const session = useBrowserSession();
+  const editable = session.ready && ["Editor", "Admin"].includes(session.group);
+  const download = (asset, filename) => downloadAsset(asset, filename).catch((error) => toaster.create({ description: errorMessage(error), type: "error" }));
+  const history = useApiResource("/get-all-file-versions/" + encodeURIComponent(asset.code) + "/", {
+    enabled: isOpen, refreshKey: JSON.stringify([asset.id, asset.name, asset.description, asset.tags, asset.version_no]),
+  });
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const busy = useRef(false);
   const metadata = [
-    { label: "Name", value: asset.name },
-    { label: "Code", value: asset.code },
-    { label: "Description", value: asset.description },
-    { label: "Version", value: asset.version_no },
-    { label: "Upload Datetime", value: asset.upload_datetime },
-    { label: "Uploaded By", value: asset.uploaded_by },
-    { label: "File Type", value: asset.file_type },
+    ["Name", asset.name], ["Code", asset.code], ["Description", asset.description],
+    ["Version", asset.version_no], ["Uploaded", formatDateTime(asset.upload_datetime)], ["Uploaded By", asset.uploaded_by],
+    ["File Type", asset.file_type], ["File Size", Number(asset.file_size).toFixed(2) + " MB"],
   ];
 
-  // Function to delete asset files
-  const deleteAsset = async (asset_code) => {
-    // Axios DELETE method: Delete an asset based on its ID
-    await axios.delete(BASE_API_DELETE + asset_code + "/");
-  };
-
-  useEffect(() => {
-    const fetchFileVersions = async () => {
-      try {
-        const res = await axios.get(BASE_FILEVER_URL + asset_code + "/");
-        setAllFiles(res.data);
-      } catch {
-        console.error("Error: ", error);
-      }
-    };
-
-    fetchFileVersions();
-  }, [asset_code]);
+  async function removeAsset() {
+    if (busy.current) return;
+    busy.current = true; setDeleting(true); setDeleteError("");
+    try {
+      await api.delete("/delete-asset-by-code/" + encodeURIComponent(asset.code) + "/");
+      setDeleteOpen(false);
+      onAssetDeleted?.(asset.code);
+    } catch (error) {
+      setDeleteError(errorMessage(error, "Unable to delete this asset."));
+    } finally {
+      busy.current = false; setDeleting(false);
+    }
+  }
 
   return (
-    <>
-      <Card.Root height="580px" width="650px">
-        <Card.Body display="flex" flexDirection="column" height="100%">
-          <Tabs.Root
-            defaultValue="metadata"
-            variant="outline"
-            style={{ flex: 1, display: "flex", flexDirection: "column" }}
-          >
-            <Tabs.List>
-              <Tabs.Trigger value="metadata">Metadata</Tabs.Trigger>
-              {/* Only show Advanced tab if 3D model */}
-              {is3DModel && (
-                <Tabs.Trigger value="advanced">Advanced Settings</Tabs.Trigger>
-              )}
-              <Tabs.Trigger value="version">Version Control</Tabs.Trigger>
-            </Tabs.List>
-            {/*metadata tab*/}
-            <Tabs.Content
-              value="metadata"
-              style={{ display: "flex", flexDirection: "column", flex: 1 }}
-            >
-              <DataList.Root orientation="horizontal">
-                {metadata.map((item) => (
-                  <DataList.Item key={item.label}>
-                    <DataList.ItemLabel>{item.label}</DataList.ItemLabel>
-                    <DataList.ItemValue>{item.value}</DataList.ItemValue>
-                  </DataList.Item>
-                ))}
-                {/*file size requires formatting for decimal point*/}
-                <DataList.Item>
-                  <DataList.ItemLabel>File Size</DataList.ItemLabel>
-                  <DataList.ItemValue>
-                    {Number(asset.file_size).toFixed(2)}MB
-                  </DataList.ItemValue>
+    <Card.Root w="full" minW="0" minH={{ xl: "580px" }}>
+      <Card.Body>
+        <Tabs.Root defaultValue="metadata">
+          <Tabs.List flexWrap="wrap">
+            <Tabs.Trigger value="metadata">Metadata</Tabs.Trigger>
+            {asset.file_type === "glb" && <Tabs.Trigger value="advanced">Advanced Settings</Tabs.Trigger>}
+            <Tabs.Trigger value="version">Version Control</Tabs.Trigger>
+          </Tabs.List>
+          <Tabs.Content value="metadata">
+            <DataList.Root orientation="horizontal">
+              {metadata.map(([label, value]) => (
+                <DataList.Item key={label}>
+                  <DataList.ItemLabel>{label}</DataList.ItemLabel>
+                  <DataList.ItemValue overflowWrap="anywhere" minW="0">{value}</DataList.ItemValue>
                 </DataList.Item>
-              </DataList.Root>
-
-              <Box mt="auto">
-                <Flex justifyContent="space-between" alignItems="center">
-                  <Button
-                    variant="surface"
-                    onClick={() =>
-                      download(asset.url, asset.name + "." + asset.file_type)
-                    }
-                  >
-                    Download
-                  </Button>
-
-                  <Flex gap="10px">
-                    {/* update btn (disabled for Viewer) */}
-                    {localStorage.getItem("group") !== "Viewer" && (
-                      <EditAssetModal asset={asset} />
-                    )}
-
-                    {/* update btn (disabled for Viewer) */}
-                    {localStorage.getItem("group") !== "Viewer" && (
-                      <UpdateAssetModal asset={asset} />
-                    )}
-
-                    {/* update btn (disabled for Viewer) */}
-                    {localStorage.getItem("group") !== "Viewer" && (
-                      <Dialog.Root role="alertdialog" placement="center">
-                        <Dialog.Trigger asChild>
-                          <Button
-                            variant="surface"
-                            colorPalette="red"
-                            onClick={() => deleteAsset(asset.code)}
-                          >
-                            Delete
-                          </Button>
-                        </Dialog.Trigger>
-                        <Portal>
-                          <Dialog.Backdrop />
-                          <Dialog.Positioner>
-                            <Dialog.Content>
-                              <Dialog.Header>
-                                <Dialog.Title>Are you sure?</Dialog.Title>
-                              </Dialog.Header>
-                              <Dialog.Body>
-                                <p>
-                                  This will permanently delete your asset and
-                                  remove it from the system!
-                                </p>
-                              </Dialog.Body>
-                              <Dialog.Footer>
-                                <Dialog.ActionTrigger asChild>
-                                  <Button variant="outline">Cancel</Button>
-                                </Dialog.ActionTrigger>
-                                <Button variant="surface" colorPalette="red">
-                                  Delete
-                                </Button>
-                              </Dialog.Footer>
-                              <Dialog.CloseTrigger asChild>
-                                <CloseButton size="sm" />
-                              </Dialog.CloseTrigger>
-                            </Dialog.Content>
-                          </Dialog.Positioner>
-                        </Portal>
-                      </Dialog.Root>
-                    )}
-                  </Flex>
-                </Flex>
-              </Box>
-            </Tabs.Content>
-
-            {/*advanced settings tab*/}
-            {is3DModel && (
-              <Tabs.Content value="advanced">
-                <Grid templateColumns="1fr 2fr" gap="50px">
-                  <>
-                    <Grid templateRows="repeat(3,1fr)" gap="10px">
-                      <Box>
-                        <p>Exposure</p>
-                        <NumberInput.Root
-                          width="150px"
-                          value={exposure}
-                          onValueChange={(e) => onExposureChange(e.value)}
-                          min="0"
-                          max="2"
-                          step={0.01}
-                          allowMouseWheel
-                          marginTop="10px"
-                        >
-                          <NumberInput.Control />
-                          <NumberInput.Input />
-                        </NumberInput.Root>
-                      </Box>
-
-                      <Box>
-                        <p>Shadow Intensity</p>
-                        <NumberInput.Root
-                          width="150px"
-                          value={shadowIntensity}
-                          onValueChange={(e) =>
-                            onShadowIntensityChange(e.value)
-                          }
-                          min="0"
-                          max="2"
-                          step={0.01}
-                          allowMouseWheel
-                          marginTop="10px"
-                        >
-                          <NumberInput.Control />
-                          <NumberInput.Input />
-                        </NumberInput.Root>
-                      </Box>
-
-                      <Box>
-                        <p>Shadow Softness</p>
-                        <NumberInput.Root
-                          width="150px"
-                          value={shadowSoftness}
-                          onValueChange={(e) => onShadowSoftnessChange(e.value)}
-                          min="0"
-                          max="1"
-                          step={0.01}
-                          allowMouseWheel
-                          marginTop="10px"
-                        >
-                          <NumberInput.Control />
-                          <NumberInput.Input />
-                        </NumberInput.Root>
-                      </Box>
-                    </Grid>
-                  </>
-
-                  <>
-                    <Box>
-                      <p>Background Colour</p>
-                      <Box marginTop="10px">
-                        <Sketch
-                          style={{ width: 300 }}
-                          color={hsva}
-                          disableAlpha={disableAlpha}
-                          onChange={(color) => {
-                            onHsvaChange(color.hsva);
-                          }}
-                        />
-                      </Box>
-                    </Box>
-                  </>
-                </Grid>
-              </Tabs.Content>
-            )}
-
-            {/*version control tab*/}
-            <Tabs.Content value="version">
-              <Box overflowY="auto">
-                <Table.Root variant="outline">
-                  <Table.Header>
-                    <Table.Row>
-                      <Table.ColumnHeader>Version No.</Table.ColumnHeader>
-                      <Table.ColumnHeader>File</Table.ColumnHeader>
-                      <Table.ColumnHeader>Actions</Table.ColumnHeader>
+              ))}
+            </DataList.Root>
+            <Flex gap="2" wrap="wrap" mt="6">
+              <Button size="sm" variant="surface" onClick={() => download(asset)}>Download</Button>
+              {editable && <>
+                <EditAssetModal asset={asset} onAssetUpdated={onAssetUpdated} />
+                <UpdateAssetModal asset={asset} onAssetUpdated={onAssetUpdated} />
+                <Dialog.Root role="alertdialog" open={deleteOpen}
+                  onOpenChange={({ open }) => { if (!busy.current) { setDeleteOpen(open); setDeleteError(""); } }}
+                  closeOnEscape={!deleting} closeOnInteractOutside={!deleting} lazyMount unmountOnExit>
+                  <Dialog.Trigger asChild><Button size="sm" variant="surface" colorPalette="red">Delete</Button></Dialog.Trigger>
+                  <Portal>
+                    <Dialog.Backdrop /><Dialog.Positioner>
+                      <Dialog.Content w="calc(100% - 2rem)">
+                        <Dialog.Header><Dialog.Title>Delete this asset?</Dialog.Title></Dialog.Header>
+                        <Dialog.Body>
+                          <Text>This permanently deletes this asset and all of its versions.</Text>
+                          {deleteError && <Text role="alert" color="red.600">{deleteError}</Text>}
+                        </Dialog.Body>
+                        <Dialog.Footer>
+                          <Dialog.ActionTrigger asChild><Button variant="outline" disabled={deleting}>Cancel</Button></Dialog.ActionTrigger>
+                          <Button colorPalette="red" onClick={removeAsset} loading={deleting} disabled={deleting} loadingText="Deleting…">Delete</Button>
+                        </Dialog.Footer>
+                        <Dialog.CloseTrigger asChild><CloseButton disabled={deleting} /></Dialog.CloseTrigger>
+                      </Dialog.Content>
+                    </Dialog.Positioner>
+                  </Portal>
+                </Dialog.Root>
+              </>}
+            </Flex>
+          </Tabs.Content>
+          {asset.file_type === "glb" && <Tabs.Content value="advanced">
+            <Stack gap="5">
+              <Grid templateColumns={{ base: "1fr", md: "repeat(3, minmax(0, 1fr))" }} gap="3">
+                {[
+                  ["Exposure", exposure, onExposureChange],
+                  ["Shadow intensity", shadowIntensity, onShadowIntensityChange],
+                  ["Shadow softness", shadowSoftness, onShadowSoftnessChange],
+                ].map(([label, value, change]) => (
+                  <Box key={label}>
+                    <Text mb="2">{label}</Text>
+                    <NumberInput.Root min={0} max={100} step={0.01} value={String(value)} allowMouseWheel
+                      onValueChange={({ value }) => change(value)}>
+                      <NumberInput.Control /><NumberInput.Input aria-label={label} />
+                    </NumberInput.Root>
+                  </Box>
+                ))}
+              </Grid>
+              <Box><Text mb="2">Background colour</Text><Sketch color={hsva} onChange={({ hsva }) => onHsvaChange(hsva)} style={{ width: "100%", maxWidth: 300 }} /></Box>
+            </Stack>
+          </Tabs.Content>}
+          <Tabs.Content value="version">
+            {history.loading && <Box role="status"><Spinner size="sm" mr="2" />Loading versions…</Box>}
+            {history.error && <Stack><Text role="alert">{history.error}</Text><Button onClick={history.refresh}>Retry versions</Button></Stack>}
+            {!history.loading && !history.error && !history.data?.length && <Text>No versions found.</Text>}
+            <Box overflowX="auto">
+              <Table.Root size="sm">
+                <Table.Header><Table.Row><Table.ColumnHeader>Version</Table.ColumnHeader><Table.ColumnHeader>File</Table.ColumnHeader><Table.ColumnHeader>Actions</Table.ColumnHeader></Table.Row></Table.Header>
+                <Table.Body>
+                  {(history.data || []).map((version) => (
+                    <Table.Row key={version.id}>
+                      <Table.Cell>{version.version_no}</Table.Cell>
+                      <Table.Cell overflowWrap="anywhere">{version.name}.{version.file_type}</Table.Cell>
+                      <Table.Cell>
+                        <Flex gap="2" wrap="wrap">
+                          <Dialog.Root lazyMount unmountOnExit>
+                            <Dialog.Trigger asChild><Button size="xs" variant="outline" aria-label={"Preview version " + version.version_no}>Preview</Button></Dialog.Trigger>
+                            <Portal><Dialog.Backdrop /><Dialog.Positioner>
+                              <Dialog.Content maxW="3xl" w="calc(100% - 2rem)">
+                                <Dialog.Header><Dialog.Title>{version.name} · Version {version.version_no}</Dialog.Title></Dialog.Header>
+                                <Dialog.Body><Box h={{ base: "280px", md: "460px" }}><PreviewAssetMedia asset={version} /></Box></Dialog.Body>
+                                <Dialog.CloseTrigger asChild><CloseButton /></Dialog.CloseTrigger>
+                              </Dialog.Content>
+                            </Dialog.Positioner></Portal>
+                          </Dialog.Root>
+                          <Button size="xs" variant="outline" aria-label={"Download version " + version.version_no}
+                            onClick={() => download(version, version.name + "(" + version.version_no + ")." + version.file_type)}>Download</Button>
+                        </Flex>
+                      </Table.Cell>
                     </Table.Row>
-                  </Table.Header>
-
-                  <Table.Body>
-                    {allFiles.map((a) => (
-                      <Table.Row key={a.version_no}>
-                        {/*version number*/}
-                        <Table.Cell>{a.version_no}</Table.Cell>
-                        {/*file name*/}
-                        <Table.Cell>{a.name + "(" + a.version_no + ")" + "." + a.file_type}</Table.Cell>
-                        {/*actions*/}
-                        <Table.Cell>
-                          <Flex direction="row" alignItems="center" gap="8px">
-                            {/*preview version*/}
-                            <Dialog.Root>
-                              <Dialog.Trigger asChild>
-                                <Box
-                                  as="span"
-                                  color="gray.400"
-                                  cursor="pointer"
-                                  _hover={{ color: "gray.500" }}
-                                >
-                                  <RxEyeOpen size={24} />
-                                </Box>
-                              </Dialog.Trigger>
-
-                              {/*dialog for viewing older version*/}
-                              <Portal>
-                                <Dialog.Backdrop />
-                                <Dialog.Positioner>
-                                  <Dialog.Content maxWidth={DIALOG_WIDTH} width="100%">
-                                    <Dialog.Header>
-                                      <Dialog.Title>
-                                        {a.name + "(" + a.version_no + ")" + "." + a.file_type}
-                                        <Text fontSize="sm" color="gray.500">{"Version " + a.version_no}</Text>
-                                      </Dialog.Title>
-                                    </Dialog.Header>
-
-                                    <Dialog.Body>
-                                      <Box
-                                        borderWidth="1px"
-                                        rounded="md"
-                                        bg={
-                                          a.file_type === "png" ||
-                                          a.file_type === "jpg" ||
-                                          a.file_type === "mp4"
-                                            ? "gray.100"
-                                            : "transparent"
-                                        }
-                                      >
-                                        {/* Display 3D models */}
-                                        {a.file_type === "glb" && (
-                                          <model-viewer
-                                            alt={a.name}
-                                            src={"http://127.0.0.1:8000" + a.url}
-                                            shadow-intensity={shadowIntensity}
-                                            shadow-softness={shadowSoftness}
-                                            exposure={exposure}
-                                            camera-controls
-                                            auto-rotate
-                                            touch-action="pan-y"
-                                            environment-image="neutral"
-                                            style={{
-                                              width: DIALOG_WIDTH,
-                                              height: DIALOG_HEIGHT,
-                                              borderRadius: "12px",
-                                              backgroundColor: "transparent",
-                                            }}
-                                          />
-                                        )}
-
-                                        {/* Display png and jpg images */}
-                                        {(a.file_type === "png" ||
-                                          a.file_type === "jpg") && (
-                                          <PreviewImageAsset
-                                            assetURL={"http://127.0.0.1:8000" + a.url}
-                                            h={DIALOG_HEIGHT}
-                                            w={DIALOG_WIDTH}
-                                          />
-                                        )}
-
-                                        {/* Display mp4 */}
-                                        {a.file_type === "mp4" && (
-                                          <PreviewVideoAsset
-                                            assetURL={"http://127.0.0.1:8000" + a.url}
-                                            h={DIALOG_HEIGHT}
-                                            w="auto"
-                                          />
-                                        )}
-                                      </Box>
-                                    </Dialog.Body>
-                                    <Dialog.CloseTrigger asChild>
-                                      <CloseButton size="sm" />
-                                    </Dialog.CloseTrigger>
-                                  </Dialog.Content>
-                                </Dialog.Positioner>
-                              </Portal>
-                            </Dialog.Root>
-
-                            <Box
-                              as="span"
-                              color="gray.400"
-                              cursor="pointer"
-                              _hover={{ color: "gray.500" }}
-                              onClick={() => download("http://127.0.0.1:8000" + a.url, a.name + "(" + a.version_no + ")" + "." + a.file_type)}
-                            >
-                              <RxPinBottom size={24} />
-                            </Box>
-                          </Flex>
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table.Root>
-              </Box>
-            </Tabs.Content>
-          </Tabs.Root>
-        </Card.Body>
-      </Card.Root>
-    </>
+                  ))}
+                </Table.Body>
+              </Table.Root>
+            </Box>
+          </Tabs.Content>
+        </Tabs.Root>
+      </Card.Body>
+    </Card.Root>
   );
 }

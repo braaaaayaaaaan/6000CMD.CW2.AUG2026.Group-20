@@ -1,120 +1,41 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Button, Flex, Image, Tabs } from "@chakra-ui/react";
+import { Button, Flex, Image, Tabs, Text } from "@chakra-ui/react";
 import { LuUserRound } from "react-icons/lu";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
 import Logo from "../assets/ManticAI_Logo.png";
 import SearchBar from "./SearchBar";
-import Link from "next/link";
+import useBrowserSession from "@/hooks/useBrowserSession";
 
 export default function NavBar({ items = [] }) {
-  // usePathname returns the current route
-  const pathName = usePathname();
-
-  // allow routing to another local page
-  const router = useRouter();
-
-  // store login info (client-side only)
-  const [accessToken, setAccessToken] = useState(null);
-  const [username, setUsername] = useState("");
-
-  useEffect(() => {
-    // read from localStorage only on client
-    const token = localStorage.getItem("accessToken");
-    const name = localStorage.getItem("username");
-
-    setAccessToken(token);
-    setUsername(name || "");
-  }, []);
-
-  // Map the path name to the tab value
-  const currentPathName = items.find((item) => item.page === pathName)?.title;
-
-  // button to be conditionally rendered
-  let button;
-
-  const handleHomeClick = () => {
-    router.push("/editor/home");
-  };
-
-  const handleProfileClick = () => {
-    // redirect to user profile
-    router.push("/user-profile");
-  };
-
-  // check if the access token exists
-  if (!accessToken) {
-    button = (
-      <Button size="sm" bg="blue.700" color="white">
-        Log In
-      </Button>
-    );
-  } else {
-    button = (
-      <Button
-        size="sm"
-        bg="blue.700"
-        color="white"
-        onClick={handleProfileClick}
-      >
-        <LuUserRound />
-        {username}
-      </Button>
-    );
-  }
-
+  const path = usePathname();
+  const session = useBrowserSession();
+  const current = items.find((item) => item.page === path)?.title || "";
   return (
     <>
-      {/*Upper NavBar - logo, search bar, login btn*/}
-      <Flex
-        py="20px"
-        spaceX="20px"
-        align="center"
-        justify="space-between"
-        bg="white"
-      >
-        {/*left side - logo*/}
-        <Image
-          src={Logo.src ?? Logo}
-          alt="logo"
-          h="40px"
-          w="auto"
-          onClick={handleHomeClick}
-          style={{ cursor: "pointer" }}
-        />
-
-        {/*center - search bar*/}
+      <Flex py="5" gap="4" align="center" justify="space-between" wrap="wrap">
+        <Link href="/editor/home" aria-label="Digital asset library">
+          <Image src={Logo.src ?? Logo} alt="ManticAI" h="40px" w="auto" maxW={{ base: "150px", md: "220px" }} />
+        </Link>
         <SearchBar />
-
-        {/*right side - log in btn*/}
-        {button}
+        <Button asChild size="sm" bg="blue.700" color="white" maxW={{ base: "160px", md: "240px" }}>
+          <Link href={session.accessToken ? "/user-profile" : "/login"} title={session.username || "Log in"}>
+            {session.accessToken ? <><LuUserRound /><Text as="span" truncate>{session.username}</Text></> : "Log In"}
+          </Link>
+        </Button>
       </Flex>
-
-      {/* Display routes (e.g. Assets, Tag Management) */}
-      <Tabs.Root
-        value={currentPathName}
-        lazyMount
-        unmountOnExit
-        variant="line"
-        colorPalette="blue"
-      >
-        <Tabs.List>
-          {/* Loop through the 'editor_items' array from EditorLayout.jsx */}
-          {items.map((item) => (
-            <Tabs.Trigger key={item.title} value={item.title} asChild>
-              {/* Display routing icon and name */}
-              <Link href={item.page}>
-                {item.icon}
-                {item.title}
-              </Link>
-            </Tabs.Trigger>
-          ))}
-
-          {/* Remove the tab style but leave the horizontal lines */}
-          <Tabs.Indicator unstyled />
-        </Tabs.List>
-      </Tabs.Root>
+      {items.length > 0 && (
+        <Tabs.Root value={current} variant="line" colorPalette="blue">
+          <Tabs.List flexWrap="wrap">
+            {items.map((item) => (
+              <Tabs.Trigger key={item.title} value={item.title} asChild>
+                <Link href={item.page}>{item.icon}{item.title}</Link>
+              </Tabs.Trigger>
+            ))}
+          </Tabs.List>
+        </Tabs.Root>
+      )}
     </>
   );
 }

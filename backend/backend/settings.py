@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "django_filters",
     "asset",
@@ -62,6 +63,8 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "backend.middleware.LoginThrottleMiddleware",
+    "backend.middleware.AuditMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "backend.middleware.MediaFramePolicyMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -142,9 +145,19 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 40,
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "user.authentication.RevocableJWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "100/hour", "user": "3000/hour", "login": "10/minute",
+        "signup": "10/hour", "uploads": "60/hour", "refresh": "60/minute",
+    },
+    "NUM_PROXIES": 0,
 }
 
 CORS_ALLOWED_ORIGINS = origins_environment("CORS_ALLOWED_ORIGINS")
@@ -161,4 +174,28 @@ AUTH_USER_MODEL = "user.User"
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=integer_environment("JWT_ACCESS_TOKEN_MINUTES", 40)),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "CHECK_REVOKE_TOKEN": True,
+}
+
+ASSET_UPLOAD_MAX_BYTES = integer_environment("ASSET_UPLOAD_MAX_MB", 100) * 1024 * 1024
+MEDIA_URL_LIFETIME_SECONDS = integer_environment("MEDIA_URL_LIFETIME_SECONDS", 300)
+FILE_UPLOAD_HANDLERS = [
+    "asset.files.LimitedUploadHandler",
+    "django.core.files.uploadhandler.MemoryFileUploadHandler",
+    "django.core.files.uploadhandler.TemporaryFileUploadHandler",
+]
+SECURE_SSL_REDIRECT = boolean_environment("DJANGO_SECURE_SSL_REDIRECT", default=not DEBUG)
+SESSION_COOKIE_SECURE = boolean_environment("DJANGO_SESSION_COOKIE_SECURE", default=not DEBUG)
+CSRF_COOKIE_SECURE = boolean_environment("DJANGO_CSRF_COOKIE_SECURE", default=not DEBUG)
+SECURE_HSTS_SECONDS = 31536000 if not DEBUG else 0
+SECURE_CONTENT_TYPE_NOSNIFF = True
+if boolean_environment("DJANGO_TRUST_PROXY_SSL_HEADER", default=False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {"dam.audit": {"handlers": ["console"], "level": "INFO", "propagate": False}},
 }

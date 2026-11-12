@@ -4,6 +4,39 @@ import uuid
 from django.db import migrations, models
 
 
+def convert_tag_ids(apps, schema_editor):
+    Tag = apps.get_model("asset", "Tags")
+    connection = schema_editor.connection
+    table = schema_editor.quote_name(Tag._meta.db_table)
+    if connection.vendor == "postgresql":
+        # No foreign keys reference tags until migration 0004. Integer IDs
+        # cannot be cast directly to UUID on a partially migrated database.
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT atttypid = 'uuid'::regtype FROM pg_attribute "
+                           "WHERE attrelid = %s::regclass AND attname = 'id'", [Tag._meta.db_table])
+            if cursor.fetchone()[0]:
+                return
+        schema_editor.execute(f'ALTER TABLE {table} ALTER COLUMN "id" DROP IDENTITY IF EXISTS')
+        schema_editor.execute(f'ALTER TABLE {table} ALTER COLUMN "id" DROP DEFAULT')
+        schema_editor.execute(f'ALTER TABLE {table} ALTER COLUMN "id" TYPE uuid '
+                              'USING md5(\'asset-tag-\' || "id"::text)::uuid')
+    else:
+        old = Tag._meta.get_field("id")
+        new = models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True)
+        new.set_attributes_from_name("id")
+        new.model = Tag
+        schema_editor.alter_field(Tag, old, new)
+        with connection.cursor() as cursor:
+            cursor.execute(f'SELECT "id" FROM {table}')
+            ids = [row[0] for row in cursor.fetchall()]
+            for old_id in ids:
+                try:
+                    uuid.UUID(str(old_id))
+                except ValueError:
+                    new_id = uuid.uuid5(uuid.NAMESPACE_OID, "asset-tag-" + str(old_id)).hex
+                    cursor.execute(f'UPDATE {table} SET "id" = %s WHERE "id" = %s', [new_id, old_id])
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -11,9 +44,12 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterField(
+        migrations.SeparateDatabaseAndState(
+            database_operations=[migrations.RunPython(convert_tag_ids)],
+            state_operations=[migrations.AlterField(
             model_name='tags',
             name='id',
             field=models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False),
+            )],
         ),
     ]

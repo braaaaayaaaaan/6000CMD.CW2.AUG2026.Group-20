@@ -8,37 +8,43 @@ import {
   Input,
   Portal,
   Stack,
+  Text,
   Textarea,
 } from "@chakra-ui/react";
 import { toaster } from "../styles/ui/toaster";
-import { useState, useEffect } from "react";
-import axios from "axios";
+import { useRef, useState } from "react";
+import { api } from "@/utils/api";
 import useTags from "../hooks/useTags";
 import AssetTag from "./AssetTag.jsx";
 
-export default function EditAssetModal({ asset }) {
-  const BASE_API_URL = "http://127.0.0.1:8000/assets/";
+export default function EditAssetModal({ asset, onAssetUpdated }) {
 
   // State variables to store uploaded asset details
   const [name, setName] = useState(asset.name);
   const [description, setDescription] = useState(asset.description);
+  const [open, setOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const savingRef = useRef(false);
 
   // state variable to store tag
-  const { tags, loading, error } = useTags();
-  const [selectedTag, setSelectedTag] = useState([]);
+  const { tags, loading, error, refresh } = useTags();
+  const [selectedTag, setSelectedTag] = useState(asset.tags || []);
 
-  //get the already assigned tags for each asset to load selected tag ui in tags area
-  async function fetchSelectedTags() {
-    try {
-      const response = await axios.get(BASE_API_URL + asset.id + "/");
-      setSelectedTag(response.data.tags || []);
-    } catch (err) {
-      console.log(err);
+  function handleOpenChange({ open: nextOpen }) {
+    if (savingRef.current) return;
+    if (nextOpen) {
+      setName(asset.name);
+      setDescription(asset.description);
+      setSelectedTag(asset.tags || []);
+      setSaveError("");
     }
+    setOpen(nextOpen);
   }
 
   //called by AssetTag (onSelectTag) and will return the array of tag ids
   async function handleTagSelect(tag_id) {
+    if (savingRef.current) return;
     setSelectedTag((prevSelected) => {
       if (prevSelected.includes(tag_id)) {
         // if already selected, remove it
@@ -50,46 +56,52 @@ export default function EditAssetModal({ asset }) {
     });
   }
 
-  async function handleAssetFileEdit() {
-    // Establish existing key-value pairs for asset
-    const assetFormData = new FormData();
+  async function handleAssetFileEdit(event) {
+    event.preventDefault();
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setIsSaving(true);
+    setSaveError("");
 
-    assetFormData.append("name", name);
-    assetFormData.append("description", description);
-
-    //cannot make existing tags array to null due to m2m field in backend, this is a workaround
-    if (selectedTag.length === 0) {
-      await axios.patch("http://127.0.0.1:8000/clear-tags/" + asset.id + "/");
-    } else {
-      selectedTag.forEach((tag_id) => { //tag id set in AssetTag componenet
-        assetFormData.append("tags", tag_id);
-      });
-    }
-
-    // PATCH method to update asset name and description
     try {
-      await axios.patch(BASE_API_URL + asset.id + "/", assetFormData, {
-        headers: { "Content-Type": "multipart/form-data" },
+      const response = await api.patch("/assets/" + asset.id + "/", {
+        name,
+        description,
+        tags: selectedTag,
       });
 
+      setOpen(false);
+      onAssetUpdated?.(response.data);
       toaster.create({
         description: "Successfully Edited Asset!",
         type: "info"
       });
 
     } catch (err) {
-      console.log(err);
+      const details = err.response?.data;
+      setSaveError(
+        details && typeof details === "object"
+          ? Object.entries(details)
+              .map(([field, messages]) => `${field}: ${Array.isArray(messages) ? messages.join(" ") : String(messages)}`)
+              .join(" ")
+          : "Unable to save changes. Please try again."
+      );
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
     }
   }
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchSelectedTags();
-  }, []);
-
   return (
     <>
-      <Dialog.Root>
+      <Dialog.Root
+        open={open}
+        onOpenChange={handleOpenChange}
+        closeOnEscape={!isSaving}
+        closeOnInteractOutside={!isSaving}
+        lazyMount
+        unmountOnExit
+      >
         <Dialog.Trigger asChild>
           <Button 
           variant="surface"
@@ -102,7 +114,7 @@ export default function EditAssetModal({ asset }) {
           <Dialog.Backdrop />
 
           <Dialog.Positioner>
-            <Dialog.Content>
+            <Dialog.Content as="form" onSubmit={handleAssetFileEdit} maxW="lg" w="calc(100% - 2rem)">
               <Dialog.Header>
                 <Dialog.Title>Edit Asset: {asset.name}</Dialog.Title>
               </Dialog.Header>
@@ -114,7 +126,10 @@ export default function EditAssetModal({ asset }) {
                     <Field.Label>Name</Field.Label>
                     <Input
                       placeholder="Name"
+                      required
+                      maxLength={200}
                       value={name}
+                      disabled={isSaving}
                       onChange={(e) => setName(e.target.value)}
                     />
                   </Field.Root>
@@ -124,7 +139,9 @@ export default function EditAssetModal({ asset }) {
                     <Field.Label>Description</Field.Label>
                     <Textarea
                       placeholder="Description"
+                      required
                       value={description}
+                      disabled={isSaving}
                       onChange={(e) => setDescription(e.target.value)}
                       height="200px"
                     />
@@ -137,24 +154,31 @@ export default function EditAssetModal({ asset }) {
                       tags={tags}
                       loading={loading}
                       error={error}
+                      disabled={isSaving}
+                      onRetry={refresh}
                       selectedTags={selectedTag}
                       onSelectTag={handleTagSelect}
                     />
                   </Field.Root>
+                  {saveError && <Text role="alert" color="red.600">{saveError}</Text>}
                 </Stack>
               </Dialog.Body>
               <Dialog.CloseTrigger asChild>
-                <CloseButton size="sm" />
+                <CloseButton size="sm" disabled={isSaving} />
               </Dialog.CloseTrigger>
 
               <Dialog.Footer>
                 <Dialog.ActionTrigger asChild>
-                  <Button variant="outline">Cancel</Button>
+                  <Button type="button" variant="outline" disabled={isSaving}>Cancel</Button>
                 </Dialog.ActionTrigger>
 
-                <Dialog.ActionTrigger asChild>
-                  <Button onClick={handleAssetFileEdit} bg="blue.700" color="white">Save</Button>
-                </Dialog.ActionTrigger>
+                <Button
+                  type="submit"
+                  bg="blue.700"
+                  color="white"
+                  loading={isSaving}
+                  loadingText="Saving…"
+                >Save</Button>
               </Dialog.Footer>
             </Dialog.Content>
           </Dialog.Positioner>

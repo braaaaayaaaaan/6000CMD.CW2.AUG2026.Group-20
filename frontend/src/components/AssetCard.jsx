@@ -1,269 +1,108 @@
 "use client";
 
-import {
-  Box,
-  Button,
-  Card,
-  Center,
-  Flex,
-  Image,
-  Stack,
-} from "@chakra-ui/react";
-import { useState, useEffect } from "react";
+import { Box, Button, Card, Flex, Spinner, Stack, Text } from "@chakra-ui/react";
+import { useMemo, useState } from "react";
+import { useSelector } from "react-redux";
+import useBrowserSession from "@/hooks/useBrowserSession";
+import useApiResource from "@/hooks/useApiResource";
+import useDebouncedValue from "@/hooks/useDebouncedValue";
+import useTags from "@/hooks/useTags";
+import { downloadAsset, errorMessage } from "@/utils/api";
+import { formatDateTime } from "@/utils/dateTime";
+import { toaster } from "@/styles/ui/toaster";
 import UploadAssetModal from "./UploadAssetModal";
 import BasicFilterComponent from "./filters/BasicFilterComponent";
 import TagFilterComponent from "./filters/TagFilterComponent";
 import PreviewAssetModal from "./previews/PreviewAssetModal";
+import PreviewAssetMedia from "./previews/PreviewAssetMedia";
 import EditAssetModal from "./EditAssetModal";
-import useDownloader from "react-use-downloader";
-import axios from "axios";
-
-import { useSelector } from "react-redux";
+import ListPagination from "./ListPagination";
 
 export default function AssetCard() {
-  //endpoint
-  const BASE_API_URL_ASSETS = "http://127.0.0.1:8000/assets/";
-  const BASE_API_URL_TAGS = "http://127.0.0.1:8000/tags/";
-
-  //state var and setter
-  const [assets, setAssets] = useState([]); // Stores list of each asset and its details
-  const [assetTagMap, setAssetTagMap] = useState({});
-
-  // Stores the filter keyword (e.g. ?ordering=name)
+  const session = useBrowserSession();
+  const { tags, loading: tagsLoading, error: tagsError } = useTags();
   const [filter, setFilter] = useState("");
-
-  // Stores the tag filter
   const [tagFilter, setTagFilter] = useState("");
-
-  // Get the keyword from searchbar
   const keyword = useSelector((state) => state.search.keyword);
+  const search = useDebouncedValue(keyword);
+  const queryKey = JSON.stringify([search, filter, tagFilter]);
+  const [pagination, setPagination] = useState({ queryKey: null, page: 1 });
+  const page = pagination.queryKey === queryKey ? pagination.page : 1;
+  const params = new URLSearchParams({ page: String(page) });
+  if (search) params.set("search", search);
+  if (filter) params.set("ordering", filter);
+  if (tagFilter) params.set("tags", tagFilter);
+  const resource = useApiResource("/assets/?" + params.toString());
+  const assets = resource.data?.results || [];
+  const count = resource.data?.count || 0;
+  const tagNames = useMemo(() => new Map(tags.map((tag) => [tag.id, tag.title])), [tags]);
+  const editable = session.ready && ["Editor", "Admin"].includes(session.group);
+  const download = (asset) => downloadAsset(asset).catch((error) => toaster.create({ description: errorMessage(error), type: "error" }));
 
-  // Handler to download asset files
-  const { download } = useDownloader();
+  function changePage(next) { setPagination({ queryKey, page: next }); }
 
-  //tag methods
-  //get the tag using id
-  async function fetchAssetTags(tag_id) {
-    try {
-      const requests = tag_id.map((id) =>
-        axios.get(BASE_API_URL_TAGS + id + "/")
-      );
-      const responses = await Promise.all(requests);
-      return responses.map((res) => res.data); // return array of tag objects
-    } catch (error) {
-      console.error("Error fetching tags:", error);
-      return [];
-    }
+  function assetChanged(updated) {
+    resource.mutate((data) => data && ({
+      ...data, results: data.results.map((asset) => asset.code === updated.code ? updated : asset),
+    }));
+    resource.refresh();
   }
 
-  // bryan useEffect()
-  useEffect(() => {
-    /*
-    GET (retrieve) assets from backend endpoint
-    Note: GET endpoint changes based on filter options
-    */
+  function uploaded(updated) {
+    changePage(1);
+    assetChanged(updated);
+  }
 
-    const getAssets = async () => {
-      // Use URLSearchParams() to build the query after /?
-      let params = new URLSearchParams();
+  function deleted(code) {
+    resource.mutate((data) => data && ({
+      ...data, count: Math.max(0, data.count - 1), results: data.results.filter((asset) => asset.code !== code),
+    }));
+    if (assets.length === 1 && page > 1) changePage(page - 1);
+    resource.refresh();
+  }
 
-      // Filter by name, description, and file_type
-      if (keyword) params.append("search", keyword);
-
-      // Filter by A-Z, Z-A, Newest, Oldest
-      if (filter) params.append("ordering", filter);
-
-      // Filter by available tags (If available)
-      if (tagFilter) params.append("tags", tagFilter);
-
-      // Build the GET backend endpoint to retrieve filtered assets
-      const url = BASE_API_URL_ASSETS + "?" + params.toString();
-
-      // Store the GET responses (results) under 'assets' array
-      const response = await axios.get(url);
-
-      setAssets(response.data.results);
-    };
-
-    /*
-    Call this function to retrieve all assets
-    suppress error, should be no problem as can render properly. most likely strict mode ba
-    */
-    getAssets();
-
-    /*
-    Using [] to only call getAssets() once for each render
-    Note: Must include keyword and filter since changes are dependent for rerender
-    */
-  }, [keyword, filter, tagFilter]);
-
-  useEffect(() => {
-    async function loadAssets() {
-      const response = await axios.get(BASE_API_URL_ASSETS);
-      const list = response.data.results;
-      setAssets(list);
-
-      // one array of promises for each asset
-      const tagPromises = list.map(async (asset) => {
-        if (asset.tags && asset.tags.length > 0) {
-          const tags = await fetchAssetTags(asset.tags); //fetch all the tags for this asset
-          return { assetId: asset.id, tags };
-        } else {
-          return { assetId: asset.id, tags: [] };
-        }
-      });
-
-      //wait for all the promise(fetch tags) to finish and return it
-      const tagResults = await Promise.all(tagPromises);
-
-      //convert array of {assetId, tags} into a map {assetId: tags}
-      const tagMap = {};
-      tagResults.forEach(({ assetId, tags }) => {
-        tagMap[assetId] = tags;
-      });
-
-      setAssetTagMap(tagMap);
-    }
-
-    loadAssets();
-  }, []);
+  function tagLabel(asset) {
+    if (!asset.tags.length) return "None";
+    if (asset.tags.every((id) => tagNames.has(id))) return asset.tags.map((id) => tagNames.get(id)).join(", ");
+    return tagsLoading ? "Loading…" : tagsError ? "Unavailable" : "Tags changed; refresh assets.";
+  }
 
   return (
-    <div>
-      {/* Display filter components and upload button*/}
-      <Flex gap="2" justify="space-between">
-        {/* Filter based on A-Z, Z-A, newest, and latest */}
-        <Box height="10">
-          <BasicFilterComponent onChange={(e) => setFilter(e)} />
-        </Box>
-
-        {/* Filter based on existing tags */}
-        <Box height="10">
-          <TagFilterComponent onChange={(e) => setTagFilter(e)} />
-        </Box>
-
-        {/* Button: Upload */}
-        <Box height="10" width="50" ml="auto">
-          {localStorage.getItem("group") !== "Viewer" && <UploadAssetModal />}
-        </Box>
+    <Stack gap="5" mt="5">
+      <Flex gap="3" justify="space-between" wrap="wrap" align="center">
+        <BasicFilterComponent value={filter} onChange={setFilter} />
+        <TagFilterComponent value={tagFilter} onChange={setTagFilter} />
+        {editable && <Box ml={{ md: "auto" }}><UploadAssetModal onAssetUploaded={uploaded} /></Box>}
       </Flex>
-
-      {/* Used for debugging purposes */}
-      {/* <p>{filter}</p> */}
-
-      <br />
-      <br />
-
-      {/* Using flex to display asset cards */}
-      <Flex gap={31} direction="row" wrap="wrap">
-        {/* Loop through the 'assets' array */}
-        {assets.map((asset) => {
-          return (
-            <Card.Root key={asset.id} width="320px" variant="elevated">
-              <Card.Body gap="2" colorPalette="gray">
-                <Stack>
-                  <Box h="140px">
-                    {/* Conditional rendering to display previews for png and jpg files*/}
-                    {(asset.file_type === "png" ||
-                      asset.file_type === "jpg") && (
-                        <Center>
-                          <Image
-                            alt={asset.name}
-                            src={asset.url}
-                            w="full"
-                            maxH="140px"
-                            borderRadius="10px"
-                          />
-                        </Center>
-                      )}
-
-                    {/* Conditional rendering to display previews for mp4 videos */}
-                    {asset.file_type === "mp4" && (
-                      <video
-                        src={asset.url}
-                        poster={asset.thumbnail_url}
-                        muted
-                        controls={false}
-                        style={{
-                          width: "100%",
-                          maxHeight: "140px",
-                          borderRadius: "10px",
-                          objectFit: "cover",
-                        }}
-                      />
-                    )}
-
-
-                    {/* Conditional rendering to display previews for glb models */}
-                    {asset.file_type === "glb" && (
-                      <model-viewer
-                        alt={asset.name}
-                        src={asset.url}
-                        shadow-intensity="1"
-                        touch-action="pan-y"
-                        camera-controls
-                      />
-                    )}
-                  </Box>
-
-                  {/* Display asset details (name, file size, description) */}
-                  <Box>
-                    <Card.Title>{asset.name}</Card.Title>
-                    <p>{Number(asset.file_size).toFixed(2)} MB</p>
-                    <Card.Description>{asset.description}</Card.Description>
-                  </Box>
-                </Stack>
-
-                {/* Display asset details (uploaded by, datetime, tags) */}
-                <Flex direction="column">
-                  <Card.Description>
-                    <b>Uploaded By:</b> {asset.uploaded_by}
-                  </Card.Description>
-
-                  <Card.Description>
-                    <b>Datetime:</b> {asset.upload_datetime}
-                  </Card.Description>
-
-                  {/* IMPORTANT: Display tags */}
-                  <Card.Description>
-                    <b>Tags: </b>
-                    {
-                      // get tags for this asset
-                      (() => {
-                        const tags = assetTagMap[asset.id];
-                        return tags && tags.length > 0
-                          ? tags.map((tag) => tag.title).join(", ")
-                          : "None";
-                      })()
-                    }
-                  </Card.Description>
-                </Flex>
-              </Card.Body>
-
-              {/* Footer displays feature buttons */}
-              <Card.Footer justifyContent="flex-end">
-                {/* Button: Preview */}
-                <PreviewAssetModal asset={asset} />
-
-                {/* Button: Download */}
-                <Button
-                  variant="surface"
-                  onClick={() =>
-                    download(asset.url, asset.name + "." + asset.file_type)
-                  }
-                >
-                  Download
-                </Button>
-
-                {/* Button: Edit (disabled for Viewer) */}
-                {localStorage.getItem("group") !== "Viewer" && (
-                  <EditAssetModal asset={asset} />
-                )}
-              </Card.Footer>
-            </Card.Root>
-          );
-        })}
+      {resource.loading && <Flex role="status" gap="2" align="center"><Spinner size="sm" />Loading assets…</Flex>}
+      {resource.error && <Stack>
+        <Text role="alert" color="red.600">{resource.error}</Text>
+        <Button alignSelf="start" onClick={resource.refresh}>Retry assets</Button>
+      </Stack>}
+      {!resource.loading && !resource.error && !assets.length && (
+        <Text role="status">{search || tagFilter ? "No assets match your filters." : "No assets yet. Upload a file to get started."}</Text>
+      )}
+      <Flex gap="6" wrap="wrap" align="stretch" aria-busy={resource.loading}>
+        {assets.map((asset) => (
+          <Card.Root key={asset.id} w={{ base: "full", sm: "320px" }} maxW="full" variant="elevated">
+            <Card.Body gap="3" minW="0">
+              <Box h="150px"><PreviewAssetMedia asset={asset} compact /></Box>
+              <Card.Title overflowWrap="anywhere">{asset.name}</Card.Title>
+              <Text fontSize="sm">{Number(asset.file_size).toFixed(2)} MB</Text>
+              <Card.Description overflowWrap="anywhere">{asset.description}</Card.Description>
+              <Text fontSize="sm" overflowWrap="anywhere"><b>Uploaded By:</b> {asset.uploaded_by}</Text>
+              <Text fontSize="sm" overflowWrap="anywhere"><b>Uploaded:</b> {formatDateTime(asset.upload_datetime)}</Text>
+              <Text fontSize="sm" overflowWrap="anywhere"><b>Tags:</b> {tagLabel(asset)}</Text>
+            </Card.Body>
+            <Card.Footer gap="2" flexWrap="wrap">
+              <PreviewAssetModal asset={asset} onAssetDeleted={deleted} onAssetUpdated={assetChanged} />
+              <Button variant="surface" size="sm" onClick={() => download(asset)}>Download</Button>
+              {editable && <EditAssetModal asset={asset} onAssetUpdated={assetChanged} />}
+            </Card.Footer>
+          </Card.Root>
+        ))}
       </Flex>
-    </div>
+      <ListPagination page={page} count={count} onPageChange={changePage} disabled={resource.loading} />
+    </Stack>
   );
 }

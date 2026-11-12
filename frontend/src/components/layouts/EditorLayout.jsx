@@ -1,46 +1,23 @@
+"use client";
+
 import { Container, Flex, Box } from "@chakra-ui/react";
 import { FaFolderOpen } from "react-icons/fa6";
 import { IoPricetagsSharp } from "react-icons/io5";
-import NavBar from "../NavBar.jsx";
-import { useEffect, useState } from "react";
+import NavBar from "../NavBar";
+import useBrowserSession from "@/hooks/useBrowserSession";
 
 export default function EditorLayout({ children }) {
-  const [group, setGroup] = useState("");
-
-  useEffect(() => {
-    // Read group from localStorage on client side
-    const storedGroup = localStorage.getItem("group") || "";
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setGroup(storedGroup);
-  }, []);
-
-  // Base editor items
-  const editor_items = [
-    { title: "Assets", page: "/editor/home", icon: <FaFolderOpen /> },
-    {
-      title: "Tag Management",
-      page: "/editor/tag-management",
-      icon: <IoPricetagsSharp />,
-    },
-  ];
-
-  // dont show Tag Management if user is a Viewer
-  const filtered_items =
-    group === "Viewer"
-      ? editor_items.filter((item) => item.title !== "Tag Management")
-      : editor_items;
-
+  const session = useBrowserSession();
+  const items = [{ title: "Assets", page: "/editor/home", icon: <FaFolderOpen /> }];
+  if (session.ready && ["Editor", "Admin"].includes(session.group)) {
+    items.push({ title: "Tag Management", page: "/editor/tag-management", icon: <IoPricetagsSharp /> });
+  }
   return (
-    <>
-      <Container>
-        <Flex direction="column" gapY="30px">
-          <Box>
-            <NavBar items={filtered_items} />
-          </Box>
-          <Box>{children}</Box>
-        </Flex>
-      </Container>
-      <Box h="30px" marginTop={"50px"} />
-    </>
+    <Container maxW="8xl" px={{ base: "4", md: "8" }} pb="10">
+      <Flex direction="column" gap="6">
+        <NavBar items={items} />
+        <Box minW="0">{children}</Box>
+      </Flex>
+    </Container>
   );
 }

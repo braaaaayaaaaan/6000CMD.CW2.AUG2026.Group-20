@@ -10,7 +10,9 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.DeleteModel(
-            name='AssetTags',
+        # Keep the old join table until 0006 can copy its relationships.
+        migrations.SeparateDatabaseAndState(
+            database_operations=[],
+            state_operations=[migrations.DeleteModel(name='AssetTags')],
         ),
     ]

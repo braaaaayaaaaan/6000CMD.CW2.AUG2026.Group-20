@@ -1,86 +1,55 @@
 "use client";
 
-import {
-  Button,
-  CloseButton,
-  Dialog,
-  Portal,
-  Input,
-  Field,
-} from "@chakra-ui/react";
-import { toaster } from "../styles/ui/toaster";
-import { LuPlus } from "react-icons/lu";
-import { useState } from "react";
-import axios from "axios";
+import { Button, CloseButton, Dialog, Field, Input, Portal, Text } from "@chakra-ui/react";
+import { useRef, useState } from "react";
+import { api, errorMessage } from "@/utils/api";
+import { refreshTags } from "@/hooks/useTags";
+import { toaster } from "@/styles/ui/toaster";
 
 export default function AddTag() {
-  const BASE_API_URL = "http://127.0.0.1:8000/tags/";
+  const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
-
-  async function handleCreateTag() {
-    const newTag = { title };
-
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const busy = useRef(false);
+  async function submit(event) {
+    event.preventDefault();
+    if (busy.current) return;
+    busy.current = true; setSaving(true); setError("");
     try {
-      await axios.post(BASE_API_URL, newTag);
-
-      toaster.create({
-        description: "Tag created successfully!🎉",
-        duration: 3000,
-      });
-
-      setTitle(""); //clear input
+      await api.post("/tags/", { title: title.trim() });
+      setOpen(false);
+      await refreshTags();
+      toaster.create({ description: "Tag created.", type: "success" });
     } catch (error) {
-      toaster.create({
-        description: "Error! Unable to create tag.",
-        duration: 3000,
-      });
+      setError(errorMessage(error));
+    } finally {
+      busy.current = false; setSaving(false);
     }
   }
-
   return (
-    <Dialog.Root>
-      <Dialog.Trigger asChild>
-        <Button size="xs" background="blue.700" color="white">
-          <LuPlus />
-          New Tag
-        </Button>
-      </Dialog.Trigger>
-      <Portal>
-        <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content>
-            {/*dialog hdr*/}
-            <Dialog.Header>
-              <Dialog.Title>Add New Tag</Dialog.Title>
-            </Dialog.Header>
-
-            {/*tag name input field*/}
-            <Dialog.Body>
-              <Field.Root>
-                <Field.Label>Tag Name</Field.Label>
-                <Input
-                  placeholder="Enter your tag name"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
-              </Field.Root>
-            </Dialog.Body>
-
-            {/*cancel and save btn*/}
-            <Dialog.Footer>
-              <Dialog.ActionTrigger asChild>
-                <Button variant="surface" colorPalette="gray">Cancel</Button>
-              </Dialog.ActionTrigger>
-              <Button background="blue.700" color="white" onClick={handleCreateTag}>Save</Button>
-            </Dialog.Footer>
-
-            {/*close btn on top right*/}
-            <Dialog.CloseTrigger asChild>
-              <CloseButton size="sm" />
-            </Dialog.CloseTrigger>
-          </Dialog.Content>
-        </Dialog.Positioner>
-      </Portal>
+    <Dialog.Root open={open} onOpenChange={({ open }) => {
+      if (busy.current) return;
+      setOpen(open);
+      if (open) { setTitle(""); setError(""); }
+    }} closeOnEscape={!saving} closeOnInteractOutside={!saving} lazyMount unmountOnExit>
+      <Dialog.Trigger asChild><Button size="sm">New Tag</Button></Dialog.Trigger>
+      <Portal><Dialog.Backdrop /><Dialog.Positioner>
+        <Dialog.Content as="form" onSubmit={submit} w="calc(100% - 2rem)">
+          <Dialog.Header><Dialog.Title>Add New Tag</Dialog.Title></Dialog.Header>
+          <Dialog.Body>
+            <Field.Root required><Field.Label>Tag Name</Field.Label>
+              <Input required maxLength={50} value={title} onChange={(event) => setTitle(event.target.value)} disabled={saving} />
+            </Field.Root>
+            {error && <Text role="alert" color="red.600">{error}</Text>}
+          </Dialog.Body>
+          <Dialog.Footer>
+            <Dialog.ActionTrigger asChild><Button type="button" variant="outline" disabled={saving}>Cancel</Button></Dialog.ActionTrigger>
+            <Button type="submit" loading={saving} disabled={saving} loadingText="Saving…">Save</Button>
+          </Dialog.Footer>
+          <Dialog.CloseTrigger asChild><CloseButton type="button" disabled={saving} /></Dialog.CloseTrigger>
+        </Dialog.Content>
+      </Dialog.Positioner></Portal>
     </Dialog.Root>
   );
 }

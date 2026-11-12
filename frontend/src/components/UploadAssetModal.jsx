@@ -1,189 +1,117 @@
 "use client";
 
-import {
-  Box,
-  Button,
-  CloseButton,
-  Dialog,
-  Field,
-  Input,
-  Portal,
-  Stack,
-  FileUpload,
-  Textarea,
-  Icon,
-} from "@chakra-ui/react";
-import { toaster } from "../styles/ui/toaster";
+import { Box, Button, CloseButton, Dialog, Field, FileUpload, Icon, Input, Portal, Stack, Text, Textarea } from "@chakra-ui/react";
+import { useRef, useState } from "react";
 import { MdCloudUpload } from "react-icons/md";
-import { useState } from "react";
-import { fileTypeFromBlob } from "file-type";
-import axios from "axios";
-import useTags from "../hooks/useTags";
-import AssetTag from "./AssetTag.jsx";
+import { api, errorMessage } from "@/utils/api";
+import { ACCEPTED_FILES, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, validateAssetFile } from "@/utils/assetFiles";
+import useBrowserSession from "@/hooks/useBrowserSession";
+import useTags from "@/hooks/useTags";
+import AssetTag from "./AssetTag";
+import { toaster } from "@/styles/ui/toaster";
 
-export default function UploadAssetModal() {
-  console.log("AssetTag", AssetTag);
-  // state variables to store asset details
+export default function UploadAssetModal({ asset, onAssetUploaded }) {
+  const session = useBrowserSession();
+  const { tags, loading, error, refresh } = useTags();
+  const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [file, setFile] = useState(null);
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const busy = useRef(false);
 
-  // state variable to store tag
-  const { tags, loading, error } = useTags();
-  const [selectedTag, setSelectedTag] = useState([]);
-
-  async function handleTagSelect(tag_id) {
-    setSelectedTag((prevSelected) => {
-      if (prevSelected.includes(tag_id)) {
-        // if already selected, remove it
-        return prevSelected.filter((id) => id !== tag_id);
-      } else {
-        // otherwise add it
-        return [...prevSelected, tag_id];
-      }
-    });
+  function changeOpen({ open: next }) {
+    if (busy.current) return;
+    if (next) {
+      setName(""); setDescription(""); setFile(null); setSelectedTags([]); setSaveError("");
+    }
+    setOpen(next);
   }
 
-  async function handleAssetFileUpload() {
-    const username = localStorage.getItem("username");
-
-    // validate to ensure file exists
-    if (!file) return;
-
-    // convert file size from bytes to MB
-    const file_size = file.size / (1024 * 1024);
-
-    // get file type (some types can't be read)
-    const file_type = await fileTypeFromBlob(file);
-
-    // build key-value pairs for uploading an asset
-    const assetFormData = new FormData();
-
-    // add asset data (user input) to the FormData
-    assetFormData.append("name", name); // name
-    assetFormData.append("description", description); // description
-
-    assetFormData.append("uploaded_by", username); // uploaded_by (hardcoded)
-    assetFormData.append("file_type", file_type.ext); // file_type (.mime can be read as well)
-    assetFormData.append("file_size", file_size); // file_size (in MB)
-    assetFormData.append("url", file);
-    selectedTag.forEach((tag_id) => {
-      assetFormData.append("tags", tag_id);
-    });
-
-    // POST method to upload asset (file) to backend endpoint
+  async function submit(event) {
+    event.preventDefault();
+    if (busy.current) return;
+    busy.current = true;
+    setSaving(true);
+    setSaveError("");
     try {
-      await axios.post("http://127.0.0.1:8000/assets/", assetFormData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      toaster.create({
-        description: "Successfully Uploaded Asset!",
-        type: "info"
-      });
-
-    } catch (err) {
-      // Does not do anything for now.
-      console.log("error", err);
+      await validateAssetFile(file);
+      if (!session.username) throw new Error("Your username is unavailable. Please sign in again.");
+      const data = new FormData();
+      data.append("name", asset ? asset.name : name.trim());
+      data.append("description", asset ? asset.description : description.trim());
+      data.append("url", file);
+      (asset ? asset.tags : selectedTags).forEach((id) => data.append("tags", id));
+      if (asset) {
+        data.append("code", asset.code);
+      }
+      const response = await api.post("/assets/", data);
+      setOpen(false);
+      onAssetUploaded?.(response.data);
+      toaster.create({ description: asset ? "New version uploaded." : "Asset uploaded.", type: "success" });
+    } catch (error) {
+      setSaveError(errorMessage(error, "Unable to upload this file. Please try again."));
+    } finally {
+      busy.current = false;
+      setSaving(false);
     }
   }
 
   return (
-    <Dialog.Root>
+    <Dialog.Root open={open} onOpenChange={changeOpen} closeOnEscape={!saving} closeOnInteractOutside={!saving} lazyMount unmountOnExit>
       <Dialog.Trigger asChild>
-        <Button variant="outline" size="sm" bg="blue.700" color="white">
-          <MdCloudUpload />
-          Upload Asset
+        <Button variant={asset ? "surface" : "solid"} colorPalette="blue" size="sm">
+          <MdCloudUpload />{asset ? "Update" : "Upload Asset"}
         </Button>
       </Dialog.Trigger>
-
       <Portal>
         <Dialog.Backdrop />
-
         <Dialog.Positioner>
-          <Dialog.Content>
-            <Dialog.Header>
-              <Dialog.Title>Upload New Asset</Dialog.Title>
-            </Dialog.Header>
-
-            <Dialog.Body pb="4">
+          <Dialog.Content as="form" onSubmit={submit} maxW="lg" w="calc(100% - 2rem)">
+            <Dialog.Header><Dialog.Title>{asset ? "Upload New Version" : "Upload New Asset"}</Dialog.Title></Dialog.Header>
+            <Dialog.Body>
               <Stack gap="4">
-                {/* Name field */}
-                <Field.Root>
-                  <Field.Label>Name</Field.Label>
-                  <Input
-                    placeholder="Name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </Field.Root>
-
-                {/* Description field */}
-                <Field.Root>
-                  <Field.Label>Description</Field.Label>
-                  <Textarea
-                    placeholder="Description"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                  />
-                </Field.Root>
-
-                {/* Asset file upload */}
-                <FileUpload.Root maxW="lg" alignItems="stretch" maxFiles={1}>
-                  <FileUpload.Label>File</FileUpload.Label>
-                  <FileUpload.HiddenInput
-                    onChange={(e) => setFile(e.target.files[0])}
-                  />
-
+                {!asset && <>
+                  <Field.Root required>
+                    <Field.Label>Name</Field.Label>
+                    <Input value={name} onChange={(event) => setName(event.target.value)} required maxLength={200} disabled={saving} />
+                  </Field.Root>
+                  <Field.Root required>
+                    <Field.Label>Description</Field.Label>
+                    <Textarea value={description} onChange={(event) => setDescription(event.target.value)} required disabled={saving} />
+                  </Field.Root>
+                </>}
+                <FileUpload.Root maxFiles={1} accept={ACCEPTED_FILES} maxFileSize={MAX_UPLOAD_BYTES}
+                  acceptedFiles={file ? [file] : []} disabled={saving}
+                  onFileChange={({ acceptedFiles }) => { setFile(acceptedFiles[0] || null); setSaveError(""); }}
+                  onFileReject={() => setSaveError("Choose a JPG, PNG, MP4, or GLB file up to " + MAX_UPLOAD_MB + " MB.")}>
+                  <FileUpload.Label>Asset file</FileUpload.Label>
+                  <FileUpload.HiddenInput />
                   <FileUpload.Dropzone>
-                    <Icon size="md" color="fg.muted">
-                      <MdCloudUpload />
-                    </Icon>
-
+                    <Icon size="md"><MdCloudUpload /></Icon>
                     <FileUpload.DropzoneContent>
-                      <Box>
-                        Drop a file here. <br />
-                        Supported files only include (.jpg, .png, .mp4, and
-                        .glb).
-                      </Box>
+                      <Box>Drop a file here or click to browse.</Box>
+                      <Text fontSize="sm">JPG, PNG, MP4, GLB · up to {MAX_UPLOAD_MB} MB</Text>
                     </FileUpload.DropzoneContent>
                   </FileUpload.Dropzone>
-
                   <FileUpload.List />
                 </FileUpload.Root>
-
-                {/* Add tags here */}
-                <Field.Root>
+                {!asset && <Field.Root>
                   <Field.Label>Tags</Field.Label>
-                  <AssetTag
-                    tags={tags}
-                    loading={loading}
-                    error={error}
-                    selectedTags={selectedTag}
-                    onSelectTag={handleTagSelect}
-                  />
-                </Field.Root>
+                  <AssetTag tags={tags} loading={loading} error={error} onRetry={refresh} disabled={saving}
+                    selectedTags={selectedTags} onSelectTag={(id) => setSelectedTags((previous) =>
+                      previous.includes(id) ? previous.filter((item) => item !== id) : [...previous, id])} />
+                </Field.Root>}
+                {saveError && <Text role="alert" color="red.600">{saveError}</Text>}
               </Stack>
             </Dialog.Body>
-            <Dialog.CloseTrigger asChild>
-              <CloseButton size="sm" />
-            </Dialog.CloseTrigger>
-
             <Dialog.Footer>
-              <Dialog.ActionTrigger asChild>
-                <Button variant="outline">Cancel</Button>
-              </Dialog.ActionTrigger>
-
-              <Dialog.ActionTrigger asChild>
-                <Button
-                  onClick={handleAssetFileUpload}
-                  bg="blue.700"
-                  color="white"
-                >
-                  Upload
-                </Button>
-              </Dialog.ActionTrigger>
+              <Dialog.ActionTrigger asChild><Button type="button" variant="outline" disabled={saving}>Cancel</Button></Dialog.ActionTrigger>
+              <Button type="submit" loading={saving} loadingText="Uploading…" disabled={saving}>Upload</Button>
             </Dialog.Footer>
+            <Dialog.CloseTrigger asChild><CloseButton type="button" disabled={saving} /></Dialog.CloseTrigger>
           </Dialog.Content>
         </Dialog.Positioner>
       </Portal>

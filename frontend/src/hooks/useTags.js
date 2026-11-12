@@ -1,28 +1,63 @@
-import { useState, useEffect } from "react";
-import axios from "axios";
+"use client";
+
+import { useEffect, useSyncExternalStore } from "react";
+import { errorMessage, getAllPages } from "@/utils/api";
+import useBrowserSession from "./useBrowserSession";
+
+const initial = { tags: [], loading: true, error: null, revision: 0 };
+let snapshot = initial;
+let pending = null;
+let controller = null;
+let sessionId = null;
+const listeners = new Set();
+const getSnapshot = () => snapshot;
+const getServerSnapshot = () => initial;
+
+function publish(value) {
+  snapshot = { ...snapshot, ...value };
+  listeners.forEach((listener) => listener());
+}
+
+function loadTags(force = false) {
+  if (pending && !force) return pending;
+  if (!force && !snapshot.loading) return Promise.resolve();
+  controller?.abort();
+  const request = new AbortController();
+  controller = request;
+  publish({ loading: true, error: null });
+  pending = getAllPages("/tags/?ordering=title", { signal: request.signal })
+    .then((tags) => {
+      if (!request.signal.aborted) {
+        publish({ tags, loading: false, error: null, revision: snapshot.revision + 1 });
+      }
+    })
+    .catch((error) => {
+      if (!request.signal.aborted) publish({ loading: false, error: errorMessage(error, "Unable to load tags.") });
+    })
+    .finally(() => {
+      if (controller === request) pending = null;
+    });
+  return pending;
+}
+
+function subscribe(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export const refreshTags = () => loadTags(true);
 
 export default function useTags() {
-  const [tags, setTags] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const BASE_API_URL = "http://127.0.0.1:8000/tags/";
-
+  const session = useBrowserSession();
+  const value = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   useEffect(() => {
-    async function fetchTags() {
-      try {
-        const response = await axios.get(BASE_API_URL);
-        setTags(response.data.results); //have to specify want the results array part of response data
-      } catch (error) {
-        console.error("Error:", error);
-        setError("Failed to load tags...");
-      } finally {
-        setLoading(false); //no matter can load tag or not, end loading state
-      }
+    if (!session.ready) return;
+    if (session.id !== sessionId) {
+      controller?.abort(); pending = null;
+      sessionId = session.id;
+      publish({ ...initial, revision: snapshot.revision + 1 });
     }
-
-    fetchTags();
-  }, []);
-
-  return {tags, loading, error };
+    if (session.accessToken) void loadTags();
+  }, [session.ready, session.id, session.accessToken]);
+  return { ...(session.id === sessionId ? value : initial), refresh: refreshTags };
 }

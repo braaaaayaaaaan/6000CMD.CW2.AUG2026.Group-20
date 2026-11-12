@@ -1,48 +1,18 @@
-'use client';
+"use client";
 
-import { Button, Menu, Portal } from '@chakra-ui/react';
-import { HiSortAscending } from 'react-icons/hi';
-import { useState } from 'react';
+import { NativeSelect } from "@chakra-ui/react";
 
-export default function BasicFilterComponent({ onChange }) {
-    const [value, setValue] = useState('');
-
-    const items = [
-        { label: 'Default', filterValue: '' },
-        { label: 'Ascending', filterValue: 'name' },
-        { label: 'Descending', filterValue: '-name' },
-        { label: 'Newest', filterValue: '-upload_datetime' },
-        { label: 'Oldest', filterValue: 'upload_datetime'}
-    ]
-
-    return (
-        <>
-        <Menu.Root>
-            <Menu.Trigger asChild>
-                <Button variant='outline' size='sm' >
-                    <HiSortAscending/> Sort
-                </Button>
-            </Menu.Trigger>
-            <Portal>
-                <Menu.Positioner>
-                    <Menu.Content minW='10rem'>
-                        <Menu.RadioItemGroup
-                          value={value}
-                          onValueChange={(e) => { setValue(e.value); onChange?.(e.value) }}
-                        >
-                          {items.map((item) => (
-                            <Menu.RadioItem key={item.filterValue} value={item.filterValue}>
-                                {item.label}
-                                <Menu.ItemIndicator/>
-                            </Menu.RadioItem>
-                          ))}
-                        </Menu.RadioItemGroup>
-                    </Menu.Content>
-                </Menu.Positioner>
-            </Portal>
-        </Menu.Root>
-        
-        </>
-
-    );
+export default function BasicFilterComponent({ value = "", onChange }) {
+  return (
+    <NativeSelect.Root size="sm" w="auto" minW="150px">
+      <NativeSelect.Field aria-label="Sort assets" value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">Default order</option>
+        <option value="name">Name: A–Z</option>
+        <option value="-name">Name: Z–A</option>
+        <option value="-upload_datetime">Newest first</option>
+        <option value="upload_datetime">Oldest first</option>
+      </NativeSelect.Field>
+      <NativeSelect.Indicator />
+    </NativeSelect.Root>
+  );
 }

@@ -49,7 +49,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
                 raise serializers.ValidationError({"password": "Passwords do not match."})
 
             try:
-                validate_password(pw1)
+                validate_password(pw1, User(**{key: value for key, value in attrs.items() if key in {"username", "first_name", "last_name", "email"}}))
             except ValidationError as e:
                 raise serializers.ValidationError({"password": list(e.messages)})
 
@@ -67,7 +67,11 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
                 raise serializers.ValidationError({"password": "New passwords do not match."})
 
             try:
-                validate_password(pw1)
+                candidate = User(username=attrs.get("username", self.instance.username),
+                                 first_name=attrs.get("first_name", self.instance.first_name),
+                                 last_name=attrs.get("last_name", self.instance.last_name),
+                                 email=attrs.get("email", self.instance.email))
+                validate_password(pw1, candidate)
             except ValidationError as e:
                 raise serializers.ValidationError({"password": list(e.messages)})
 
@@ -75,7 +79,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 
     def update(self, instance, validated_data):
         # Update personal info
-        for attr in ["first_name", "last_name", "email"]:
+        for attr in ["username", "first_name", "last_name", "email"]:
             if attr in validated_data:
                 setattr(instance, attr, validated_data[attr])
 
@@ -83,6 +87,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         pw1 = validated_data.get("password1")
         if pw1:
             instance.set_password(pw1)
+            instance.token_version += 1
 
         instance.save()
         return instance
@@ -91,6 +96,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
     def create(self, validated_data):
         password = validated_data.pop("password1")
         validated_data.pop("password2")
+        validated_data.pop("current_password", None)
         # Public signup always gets Viewer, regardless of database-generated IDs.
         validated_data.pop("groups", None)
         default_group, _ = Group.objects.get_or_create(name="Viewer")
@@ -107,16 +113,25 @@ class GroupSerializer(serializers.HyperlinkedModelSerializer):
         fields = ["url", "name"]
 
 class NewTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        token["version"] = user.token_version
+        return token
+
     def validate(self, attrs):
         data = super().validate(attrs)
 
-        group_name = None
-        if self.user.groups.exists():
-            group_name = self.user.groups.first().name
+        group_name = "Admin" if self.user.is_staff or self.user.is_superuser else "Viewer"
+        if group_name != "Admin" and self.user.groups.filter(name="Editor").exists():
+            group_name = "Editor"
 
         # add whatever you want to return
         data['username'] = self.user.username
         data['id'] = self.user.id
         data["group"] = group_name
+        request = self.context.get("request")
+        if request:
+            request._request.audit_actor = str(self.user.pk)
 
         return data

@@ -7,9 +7,5 @@
     "paths": {
       "@/*": ["./src/*"]
     }
-  },
-
-  "types": [
-    "babylonjs",
-  ],
+  }
 }
