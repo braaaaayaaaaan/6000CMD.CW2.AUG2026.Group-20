@@ -8,93 +8,51 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("asset", "0011_assetseries_asset_unique_asset_version_and_more"),
+        ('asset', '0011_assetseries_asset_unique_asset_version_and_more'),
     ]
 
     operations = [
         migrations.AddField(
-            model_name="asset",
-            name="processing_attempts",
+            model_name='asset',
+            name='processing_attempts',
             field=models.PositiveSmallIntegerField(default=0, editable=False),
         ),
         migrations.AddField(
-            model_name="asset",
-            name="processing_detail",
+            model_name='asset',
+            name='processing_detail',
             field=models.TextField(blank=True, editable=False),
         ),
         migrations.AddField(
-            model_name="asset",
-            name="processing_lease_until",
+            model_name='asset',
+            name='processing_lease_until',
             field=models.DateTimeField(editable=False, null=True),
         ),
         migrations.AddField(
-            model_name="asset",
-            name="processing_status",
-            field=models.CharField(
-                choices=[
-                    ("pending", "Waiting for processing"),
-                    ("processing", "Processing"),
-                    ("approved", "Approved and available"),
-                    ("rejected", "Rejected"),
-                    ("error", "Processing error"),
-                ],
-                db_index=True,
-                default="pending",
-                editable=False,
-                max_length=12,
-            ),
+            model_name='asset',
+            name='processing_status',
+            field=models.CharField(choices=[('pending', 'Waiting for processing'), ('processing', 'Processing'), ('approved', 'Approved and available'), ('rejected', 'Rejected'), ('error', 'Processing error')], db_index=True, default='pending', editable=False, max_length=12),
         ),
         migrations.AddField(
-            model_name="asset",
-            name="processing_token",
+            model_name='asset',
+            name='processing_token',
             field=models.UUIDField(editable=False, null=True),
         ),
         migrations.AddField(
-            model_name="asset",
-            name="processing_updated_at",
-            field=models.DateTimeField(
-                default=django.utils.timezone.now, editable=False
-            ),
+            model_name='asset',
+            name='processing_updated_at',
+            field=models.DateTimeField(default=django.utils.timezone.now, editable=False),
         ),
         migrations.AlterField(
-            model_name="asset",
-            name="url",
-            field=models.FileField(
-                storage=asset.models.AssetFileStorage(
-                    directory_permissions_mode=448, file_permissions_mode=384
-                ),
-                upload_to=asset.models.private_asset_name,
-            ),
+            model_name='asset',
+            name='url',
+            field=models.FileField(storage=asset.models.AssetFileStorage(directory_permissions_mode=448, file_permissions_mode=384), upload_to=asset.models.private_asset_name),
         ),
         migrations.AddConstraint(
-            model_name="asset",
-            constraint=models.CheckConstraint(
-                condition=models.Q(
-                    (
-                        "processing_status__in",
-                        ["pending", "processing", "approved", "rejected", "error"],
-                    )
-                ),
-                name="valid_asset_processing_status",
-            ),
+            model_name='asset',
+            constraint=models.CheckConstraint(condition=models.Q(('processing_status__in', ['pending', 'processing', 'approved', 'rejected', 'error'])), name='valid_asset_processing_status'),
         ),
         migrations.AddConstraint(
-            model_name="asset",
-            constraint=models.CheckConstraint(
-                condition=models.Q(
-                    models.Q(
-                        ("processing_lease_until__isnull", False),
-                        ("processing_status", "processing"),
-                        ("processing_token__isnull", False),
-                    ),
-                    models.Q(
-                        models.Q(("processing_status", "processing"), _negated=True),
-                        ("processing_lease_until__isnull", True),
-                        ("processing_token__isnull", True),
-                    ),
-                    _connector="OR",
-                ),
-                name="valid_asset_processing_lease",
-            ),
+            model_name='asset',
+            constraint=models.CheckConstraint(condition=models.Q(models.Q(('processing_lease_until__isnull', False), ('processing_status', 'processing'), ('processing_token__isnull', False)), models.Q(models.Q(('processing_status', 'processing'), _negated=True), ('processing_lease_until__isnull', True), ('processing_token__isnull', True)), _connector='OR'), name='valid_asset_processing_lease'),
         ),
     ]

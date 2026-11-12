@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from datetime import timedelta
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -266,6 +267,15 @@ CACHES = {"default": {
 ASSET_UPLOAD_MAX_BYTES = (
     integer_environment("ASSET_UPLOAD_MAX_MB", 100, maximum=100) * 1024 * 1024
 )
+ASSET_IMAGE_MAX_PIXELS = integer_environment(
+    "ASSET_IMAGE_MAX_PIXELS", 100_000_000, maximum=100_000_000
+)
+_venv_ffprobe = Path(sys.prefix) / "bin" / "ffprobe"
+ASSET_FFPROBE_EXECUTABLE = os.environ.get(
+    "ASSET_FFPROBE_EXECUTABLE",
+    str(_venv_ffprobe) if _venv_ffprobe.is_file() else "ffprobe",
+)
+ASSET_NODE_EXECUTABLE = os.environ.get("ASSET_NODE_EXECUTABLE", "node")
 MEDIA_URL_LIFETIME_SECONDS = integer_environment("MEDIA_URL_LIFETIME_SECONDS", 300)
 FILE_UPLOAD_HANDLERS = [
     "asset.files.LimitedUploadHandler",

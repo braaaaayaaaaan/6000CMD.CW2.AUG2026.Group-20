@@ -1,10 +1,15 @@
 import logging
 import hashlib
-import os
-import struct
 import json
+import math
+import os
+import shutil
+import struct
+import subprocess
+import sys
 import uuid
 import warnings
+from tempfile import TemporaryFile
 from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path, PurePosixPath
@@ -15,7 +20,7 @@ from django.core.files import File
 from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadhandler import FileUploadHandler, StopUpload
 from django.db import connection, transaction
-from django.db.models import F, Q
+from django.db.models import Q
 from django.db.models.signals import post_delete, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
@@ -103,7 +108,7 @@ def validate_file(file):
                 with Image.open(file) as image:
                     image.load()
         elif kind == "glb":
-            validate_glb(file, file.size)
+            validate_glb_container(file, file.size)
         else:
             validate_mp4(file, file.size)
     except (ValueError, OSError, SyntaxError, struct.error, KeyError, TypeError, AttributeError, RecursionError,
@@ -126,7 +131,7 @@ def file_digest(file):
         file.seek(position)
 
 
-def validate_glb(file, size):
+def validate_glb_container(file, size):
     file.seek(0)
     magic, version, length = struct.unpack("<4sII", file.read(12))
     if magic != b"glTF" or version != 2 or length != size:
@@ -294,11 +299,443 @@ def staged_file(serializer):
 
 MAX_PROCESSING_ATTEMPTS = 3
 PROCESSING_LEASE = timedelta(minutes=15)
+IMAGE_VALIDATION_TIMEOUT_SECONDS = 120
+VIDEO_VALIDATION_TIMEOUT_SECONDS = 30
+VIDEO_MAX_LONG_EDGE = 3840
+VIDEO_MAX_SHORT_EDGE = 2160
+VIDEO_PROBE_OUTPUT_MAX_BYTES = 1024 * 1024
+GLB_VALIDATION_TIMEOUT_SECONDS = 120
+# Approved after inspecting the four existing models (largest total: 4,657,032).
+GLB_MAX_ACCESSOR_ELEMENTS = 2_000_000
+GLB_MAX_TOTAL_ACCESSOR_ELEMENTS = 20_000_000
+
+# Small policy preflight, followed by the official specification validator.
+# Keep this inline so the existing worker needs no separate script or service.
+GLB_VALIDATION_SCRIPT = r"""
+const fs = require('node:fs');
+const validator = require(process.argv[1]);
+const reject = reason => ({valid: false, reason});
+
+async function inspect() {
+  const bytes = fs.readFileSync(0);
+  if (bytes.length < 20 || bytes.toString('ascii', 0, 4) !== 'glTF' ||
+      bytes.readUInt32LE(4) !== 2 || bytes.readUInt32LE(8) !== bytes.length) {
+    return reject('GLB header or declared file length is invalid.');
+  }
+  const length = bytes.readUInt32LE(12);
+  if (bytes.toString('ascii', 16, 20) !== 'JSON' || length % 4 ||
+      length > bytes.length - 20) {
+    return reject('GLB must start with a valid JSON chunk.');
+  }
+  let model;
+  try { model = JSON.parse(bytes.toString('utf8', 20, 20 + length)); }
+  catch { return reject('GLB contains unreadable glTF JSON.'); }
+  if (!model || typeof model !== 'object' || Array.isArray(model)) {
+    return reject('GLB must contain a glTF object.');
+  }
+
+  // Reviewed extensions use internal indices/properties, not additional URIs.
+  // Do not automatically allow new extensions when upgrading the dependency.
+  const safeExtensions = new Set([
+    'EXT_texture_webp', 'KHR_animation_pointer', 'KHR_lights_punctual',
+    'KHR_materials_anisotropy', 'KHR_materials_clearcoat',
+    'KHR_materials_dispersion', 'KHR_materials_emissive_strength',
+    'KHR_materials_ior', 'KHR_materials_iridescence',
+    'KHR_materials_pbrSpecularGlossiness', 'KHR_materials_sheen',
+    'KHR_materials_specular', 'KHR_materials_transmission',
+    'KHR_materials_unlit', 'KHR_materials_variants', 'KHR_materials_volume',
+    'KHR_mesh_quantization', 'KHR_texture_transform'
+  ]);
+  for (const key of ['extensionsUsed', 'extensionsRequired']) {
+    if (Array.isArray(model[key]) && model[key].some(x => !safeExtensions.has(x))) {
+      return reject('GLB uses an extension whose resource safety cannot be verified.');
+    }
+  }
+  const pending = [model];
+  while (pending.length) {
+    const value = pending.pop();
+    if (!value || typeof value !== 'object') continue;
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'extras') continue; // Application metadata is not a resource.
+      if (key === 'extensions' && child && typeof child === 'object' &&
+          Object.keys(child).some(x => !safeExtensions.has(x))) {
+        return reject('GLB uses an extension whose resource safety cannot be verified.');
+      }
+      if (child && typeof child === 'object') pending.push(child);
+    }
+  }
+  for (const key of ['buffers', 'images']) {
+    if (!Array.isArray(model[key])) continue; // Schema errors go to Khronos.
+    for (const resource of model[key]) {
+      if (typeof resource?.uri === 'string' && !/^data:/i.test(resource.uri)) {
+        return reject('GLB must be self-contained; external resources are prohibited.');
+      }
+    }
+  }
+  if (Array.isArray(model.accessors)) {
+    let total = 0;
+    for (const accessor of model.accessors) {
+      const count = accessor?.count;
+      if (!Number.isSafeInteger(count) || count <= 0) {
+        return reject('GLB accessor element count is invalid.');
+      }
+      total += count;
+      if (count > Number(process.argv[2]) || total > Number(process.argv[3])) {
+        return reject('GLB exceeds the approved accessor complexity limits.');
+      }
+    }
+  }
+  let requestedExternal = false;
+  const report = await validator.validateBytes(bytes, {
+    format: 'glb', maxIssues: 100, writeTimestamp: false,
+    externalResourceFunction: () => {
+      requestedExternal = true;
+      return Promise.reject(new Error('External resources are prohibited.'));
+    }
+  });
+  const issues = report.issues;
+  if (!issues || !Number.isInteger(issues.numErrors) || issues.numErrors < 0 ||
+      !Number.isInteger(issues.numWarnings) || issues.numWarnings < 0 ||
+      typeof issues.truncated !== 'boolean' || !Array.isArray(issues.messages)) {
+    throw new Error('Incomplete validator report.');
+  }
+  if (requestedExternal || report.info?.resources?.some(x => x.storage === 'external')) {
+    return reject('GLB must be self-contained; external resources are prohibited.');
+  }
+  if (issues.numErrors > 0) return reject('GLB does not meet the glTF specification.');
+  if (issues.truncated || report.mimeType !== 'model/gltf-binary' ||
+      report.info?.version !== '2.0') throw new Error('Incomplete validation.');
+  return {valid: true, warnings: issues.numWarnings,
+    warningCodes: issues.messages.filter(x => x.severity === 1)
+      .map(x => x.code).filter(x => /^[A-Z0-9_]{1,80}$/.test(x)).slice(0, 10)};
+}
+inspect().then(result => process.stdout.write(JSON.stringify(result)))
+  .catch(() => { process.exitCode = 2; });
+"""
+
+
+def run_validation_process(
+    arguments, timeout, *, stdin=subprocess.DEVNULL, env=None, output_limit=16_384
+):
+    """Read bounded JSON and retain only whether the tool reported diagnostics."""
+    with TemporaryFile() as output:
+        with subprocess.Popen(
+            arguments, stdin=stdin, stdout=output, stderr=subprocess.PIPE, env=env
+        ) as process:
+            try:
+                exit_code = process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                raise RuntimeError("File validation timed out.") from None
+            # Retain no diagnostic text. The OS pipe bounds diagnostic buffering;
+            # excessive logging can fill it, causing the same fail-closed timeout.
+            os.set_blocking(process.stderr.fileno(), False)
+            try:
+                diagnostics = bool(os.read(process.stderr.fileno(), 1))
+            except BlockingIOError:
+                raise RuntimeError("File validation did not finish its diagnostics.") from None
+        if output.tell() > output_limit:
+            raise RuntimeError("File validation returned excessive output.")
+        output.seek(0)
+        try:
+            outcome = json.loads(output.read(output_limit + 1))
+        except (ValueError, UnicodeError):
+            raise RuntimeError("File validation returned unreadable output.") from None
+        if not isinstance(outcome, dict):
+            raise RuntimeError("File validation returned incomplete output.")
+        # A zero exit code alone is insufficient: some parsers report errors
+        # while still emitting usable-looking metadata. Never publish that file.
+        return exit_code, outcome, diagnostics
+
+
+def validate_image(key, expected_type):
+    """Read-only Pillow validation, run in the worker's isolated child process."""
+    from PIL import Image, ImageFile, features
+
+    formats = {"jpg": "JPEG", "png": "PNG"}
+    if not is_quarantine_key(key) or expected_type not in formats:
+        raise ValueError("A quarantined JPEG or PNG reference is required.")
+    if not features.check_codec("jpg" if expected_type == "jpg" else "zlib"):
+        raise RuntimeError("The required image decoder is unavailable.")
+    storage = Asset._meta.get_field("url").storage
+    limit = settings.ASSET_IMAGE_MAX_PIXELS
+    old_limit = Image.MAX_IMAGE_PIXELS
+    old_truncated = ImageFile.LOAD_TRUNCATED_IMAGES
+    Image.MAX_IMAGE_PIXELS = limit
+    ImageFile.LOAD_TRUNCATED_IMAGES = False
+    try:
+        # Opening storage is outside the decoder error handler: missing files and
+        # filesystem failures are operational errors, not invalid-image results.
+        with storage.open(key, "rb") as original:
+            try:
+                if validate_file(original) != expected_type:
+                    raise ValidationError(
+                        "Image content does not match its uploaded type."
+                    )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", Image.DecompressionBombWarning)
+                    warnings.filterwarnings(
+                        "error", category=UserWarning, module=r"PIL\..*"
+                    )
+                    with Image.open(
+                        original, formats=list(formats.values())
+                    ) as image:
+                        if image.format != formats[expected_type]:
+                            raise ValidationError(
+                                "Image content does not match its uploaded type."
+                            )
+                        image.verify()
+                    original.seek(0)
+                    with Image.open(
+                        original, formats=list(formats.values())
+                    ) as image:
+                        # Validate every PNG frame while keeping only the current
+                        # frame in use; no resizing, conversion or saving occurs.
+                        for frame in range(getattr(image, "n_frames", 1)):
+                            image.seek(frame)
+                            width, height = image.size
+                            if width <= 0 or height <= 0:
+                                raise ValidationError("Image dimensions are invalid.")
+                            if width * height > limit:
+                                raise ValidationError(
+                                    f"Image exceeds the {limit:,}-pixel limit."
+                                )
+                            image.load()
+            except (
+                Image.DecompressionBombWarning,
+                Image.DecompressionBombError,
+            ):
+                raise ValidationError(
+                    f"Image exceeds the {limit:,}-pixel limit."
+                ) from None
+            except OSError as error:
+                if error.errno is not None:
+                    raise
+                raise ValidationError(
+                    "Image is corrupted, truncated or cannot be decoded."
+                ) from None
+            except (SyntaxError, ValueError, EOFError, struct.error, UserWarning):
+                raise ValidationError(
+                    "Image is malformed or cannot be decoded."
+                ) from None
+    finally:
+        Image.MAX_IMAGE_PIXELS = old_limit
+        ImageFile.LOAD_TRUNCATED_IMAGES = old_truncated
+    return True
+
+
+def validate_video(key):
+    """Inspect MP4 metadata only; never rewrite or fully decode the original."""
+    if not is_quarantine_key(key):
+        raise ValueError("A quarantined MP4 reference is required.")
+    storage = Asset._meta.get_field("url").storage
+    source = Path(storage.path(key))
+    if source.is_symlink() or not source.is_file():
+        raise OSError("Expected a regular quarantined video file.")
+    with storage.open(key, "rb") as original:
+        if validate_file(original) != "mp4":
+            raise ValidationError("Video content is not a supported MP4 file.")
+
+    configured = settings.ASSET_FFPROBE_EXECUTABLE
+    if not Path(configured).is_absolute() and Path(configured).name != configured:
+        raise RuntimeError("Configure FFprobe using an absolute path or executable name.")
+    executable = shutil.which(configured)
+    if not executable:
+        raise RuntimeError("FFprobe is unavailable. The video remains quarantined.")
+    arguments = [
+        str(Path(executable).resolve()),
+        "-v", "error",
+        "-protocol_whitelist", "file",
+        "-format_whitelist", "mov",
+        "-enable_drefs", "0",
+        "-use_absolute_path", "0",
+        "-threads", "1",
+        # Uppercase V excludes attached pictures/cover art from video streams.
+        "-select_streams", "V",
+        "-show_entries",
+        "format=format_name,duration:stream=codec_type,codec_name,width,height,duration:error=code",
+        "-show_error",
+        "-of", "json",
+        "-i", str(source),
+    ]
+    exit_code, metadata, diagnostics = run_validation_process(
+        arguments, VIDEO_VALIDATION_TIMEOUT_SECONDS,
+        output_limit=VIDEO_PROBE_OUTPUT_MAX_BYTES,
+    )
+    if exit_code != 0 or "error" in metadata:
+        error = metadata.get("error")
+        # FFmpeg's AVERROR_INVALIDDATA is an input rejection. Crashes, missing
+        # codecs, I/O errors and unknown failures remain retryable operational errors.
+        if (
+            exit_code > 0
+            and isinstance(error, dict)
+            and error.get("code") == -1094995529
+        ):
+            raise ValidationError("MP4 container is malformed or unreadable.")
+        raise RuntimeError("Video inspection could not finish.")
+    if diagnostics:
+        raise RuntimeError("Video inspection reported errors.")
+    container, streams = metadata.get("format"), metadata.get("streams")
+    if not isinstance(container, dict) or not isinstance(streams, list):
+        raise RuntimeError("Video inspection returned incomplete output.")
+    name = container.get("format_name")
+    if not isinstance(name, str) or "mp4" not in name.split(","):
+        raise ValidationError("Video container is not a supported MP4 file.")
+    if not streams:
+        raise ValidationError("MP4 must contain a recognisable video stream.")
+
+    def duration(value):
+        if value is None or value == "N/A":
+            return None
+        try:
+            if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+                raise ValueError
+            seconds = float(value)
+            if not math.isfinite(seconds) or seconds <= 0:
+                raise ValueError
+        except (ValueError, OverflowError):
+            raise ValidationError("Video duration metadata is invalid.") from None
+        return seconds
+
+    container_duration = duration(container.get("duration"))
+    for stream in streams:
+        if not isinstance(stream, dict):
+            raise RuntimeError("Video inspection returned incomplete output.")
+        codec = stream.get("codec_name")
+        if (
+            stream.get("codec_type") != "video"
+            or not isinstance(codec, str)
+            or not codec.strip()
+            or codec in {"unknown", "none", "N/A"}
+        ):
+            raise ValidationError("Video stream metadata is incomplete or unrecognisable.")
+        width, height = stream.get("width"), stream.get("height")
+        if (
+            type(width) is not int
+            or type(height) is not int
+            or width <= 0
+            or height <= 0
+        ):
+            raise ValidationError("Video dimensions are missing or invalid.")
+        # Sorting also handles 90/270-degree display rotations: swapping axes
+        # cannot bypass either edge limit, and no decoding/rotation is needed.
+        short_edge, long_edge = sorted((width, height))
+        if long_edge > VIDEO_MAX_LONG_EDGE or short_edge > VIDEO_MAX_SHORT_EDGE:
+            raise ValidationError(
+                "Video exceeds the 4K limit (3840 × 2160, including portrait)."
+            )
+        stream_duration = duration(stream.get("duration"))
+        if stream_duration is None and container_duration is None:
+            raise ValidationError("Video duration metadata is missing.")
+    return True
+
+
+def validate_glb(key):
+    """Inspect controlled GLB bytes using the project-local Khronos package."""
+    if not is_quarantine_key(key):
+        raise ValueError("A quarantined GLB reference is required.")
+    storage = Asset._meta.get_field("url").storage
+    source = Path(storage.path(key))
+    if source.is_symlink() or not source.is_file():
+        raise OSError("Expected a regular quarantined GLB file.")
+    configured = settings.ASSET_NODE_EXECUTABLE
+    if not Path(configured).is_absolute() and Path(configured).name != configured:
+        raise RuntimeError("Configure Node using an absolute path or executable name.")
+    executable = shutil.which(configured)
+    package = settings.BASE_DIR.parent / "frontend/node_modules/gltf-validator"
+    if not executable or not (package / "index.js").is_file():
+        raise RuntimeError("Node or the Khronos validator is unavailable.")
+    # An unbuffered descriptor preserves the position when handed to Node as
+    # stdin, even after the preliminary signature check reads ahead.
+    with source.open("rb", buffering=0) as original:
+        if validate_file(File(original)) != "glb":
+            raise ValidationError("File content is not a supported GLB file.")
+        exit_code, outcome, diagnostics = run_validation_process(
+            [
+                str(Path(executable).resolve()),
+                "--permission",
+                "--allow-fs-read=" + str(package.resolve()),
+                "--max-old-space-size=512",
+                "-e", GLB_VALIDATION_SCRIPT,
+                str(package.resolve()),
+                str(GLB_MAX_ACCESSOR_ELEMENTS),
+                str(GLB_MAX_TOTAL_ACCESSOR_ELEMENTS),
+            ],
+            GLB_VALIDATION_TIMEOUT_SECONDS,
+            stdin=original,
+            env={"NODE_OPTIONS": ""},
+        )
+    if exit_code != 0 or diagnostics:
+        raise RuntimeError("GLB validation could not finish.")
+    if outcome.get("valid") is False and isinstance(outcome.get("reason"), str):
+        raise ValidationError(outcome["reason"])
+    if outcome.get("valid") is True and type(outcome.get("warnings")) is int:
+        codes = outcome.get("warningCodes")
+        if (
+            outcome["warnings"] < 0
+            or not isinstance(codes, list)
+            or len(codes) > 10
+            or any(
+                not isinstance(code, str)
+                or not 1 <= len(code) <= 80
+                or not code.isascii()
+                or not code.replace("_", "").isalnum()
+                for code in codes
+            )
+        ):
+            raise RuntimeError("GLB validation returned incomplete output.")
+        if outcome["warnings"]:
+            logger.warning(
+                "glb_validation_warnings file=%s count=%s codes=%s",
+                key, outcome["warnings"], codes,
+            )
+        return True
+    raise RuntimeError("GLB validation returned incomplete output.")
 
 
 def check_asset_security(asset):
-    """Items 4–6 must validate the file type before this can return True."""
-    raise NotImplementedError("Required file-type validation is not implemented.")
+    """Every promotion must complete the applicable trusted file-type checks."""
+    if asset.file_type == "glb":
+        return validate_glb(asset.url.name)
+    if asset.file_type == "mp4":
+        return validate_video(asset.url.name)
+    if asset.file_type not in {"jpg", "png"}:
+        raise ValidationError("Unsupported asset file type.")
+    environment = {
+        **os.environ,
+        "DJANGO_SETTINGS_MODULE": os.environ.get("DJANGO_SETTINGS_MODULE")
+        or "backend.settings",
+        "DJANGO_ASSET_PRIVATE_ROOT": str(settings.ASSET_PRIVATE_ROOT),
+        "ASSET_IMAGE_MAX_PIXELS": str(settings.ASSET_IMAGE_MAX_PIXELS),
+        "DJANGO_READ_DOT_ENV": "false",
+    }
+    exit_code, outcome, diagnostics = run_validation_process(
+        [
+            sys.executable,
+            "-B",
+            str(settings.BASE_DIR / "manage.py"),
+            "cleanup_asset_files",
+            "--validate-image",
+            asset.url.name,
+            "--image-type",
+            asset.file_type,
+            "--skip-checks",
+        ],
+        IMAGE_VALIDATION_TIMEOUT_SECONDS,
+        env=environment,
+    )
+    if exit_code != 0 or diagnostics:
+        logger.error(
+            "image_validation_process_failed",
+            extra={"asset_id": str(asset.pk), "exit_code": exit_code},
+        )
+        raise RuntimeError("Image validation could not finish.")
+    if outcome.get("valid") is True:
+        return True
+    if outcome.get("valid") is False and isinstance(outcome.get("reason"), str):
+        raise ValidationError(outcome["reason"])
+    raise RuntimeError("Image validation returned an incomplete result.")
 
 
 def same_file_contents(first, second):
@@ -357,12 +794,16 @@ def promote_asset(job):
         raise ValueError("Only claimed quarantine files can be promoted.")
     live_claim = Asset.objects.filter(
         pk=job.pk,
+        code=job.code,
+        version_no=job.version_no,
+        file_type=job.file_type,
         url=job.url.name,
         processing_status=Asset.ProcessingStatus.PROCESSING,
         processing_token=job.processing_token,
         processing_lease_until__gt=timezone.now(),
     )
-    if not live_claim.exists():
+    job = live_claim.first()
+    if job is None:
         return False
     if not Path(job.url.path).is_file():
         raise FileNotFoundError("Quarantined upload is missing.")
@@ -425,6 +866,7 @@ def claim_processing_job(retry_errors=False, cutoff=None):
     with transaction.atomic():
         jobs = Asset.objects.filter(
             eligible,
+            file_type__in=("jpg", "png", "mp4", "glb"),
             processing_updated_at__lte=cutoff,
             processing_attempts__lt=MAX_PROCESSING_ATTEMPTS,
             url__regex=QUARANTINE_KEY_PATTERN,
@@ -457,11 +899,10 @@ def claim_processing_job(retry_errors=False, cutoff=None):
 
 
 def finish_processing_job(job, status, detail):
-    """Finish without approval; unavailable validators do not consume retries."""
+    """Finish a failed job without enabling publication."""
     if status not in {
         Asset.ProcessingStatus.REJECTED,
         Asset.ProcessingStatus.ERROR,
-        Asset.ProcessingStatus.PENDING,
     }:
         raise ValueError("Successful checks must use private file promotion.")
     changes = {
@@ -471,8 +912,6 @@ def finish_processing_job(job, status, detail):
         "processing_token": None,
         "processing_lease_until": None,
     }
-    if status == Asset.ProcessingStatus.PENDING:
-        changes["processing_attempts"] = F("processing_attempts") - 1
     with transaction.atomic():
         if not AssetSeries.objects.select_for_update().filter(code=job.code).exists():
             return False
@@ -498,15 +937,12 @@ def process_uploads(limit=100, retry_errors=False):
             break
         try:
             promote_asset(job)
-        except ValidationError:
+        except ValidationError as error:
             status, detail = (
                 Asset.ProcessingStatus.REJECTED,
-                "This file did not pass validation. Upload a replacement.",
-            )
-        except NotImplementedError:
-            status, detail = (
-                Asset.ProcessingStatus.PENDING,
-                "Awaiting required file-type validation. The file remains quarantined.",
+                str(error.detail[0])
+                if isinstance(error.detail, list) and len(error.detail) == 1
+                else "This file did not pass validation. Upload a replacement.",
             )
         except Exception:
             logger.exception("asset_processing_failed", extra={"asset_id": str(job.pk)})

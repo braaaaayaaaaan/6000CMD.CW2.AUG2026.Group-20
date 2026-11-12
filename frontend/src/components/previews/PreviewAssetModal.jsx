@@ -19,6 +19,8 @@ export default function PreviewAssetModal({
   asset,
   onAssetDeleted,
   onAssetUpdated,
+  onAssetUploaded,
+  onVersionsLoaded,
 }) {
   const [open, setOpen] = useState(false);
   const [exposure, setExposure] = useState(1);
@@ -97,6 +99,8 @@ export default function PreviewAssetModal({
                     onHsvaChange={setHsva}
                     onAssetDeleted={onAssetDeleted}
                     onAssetUpdated={onAssetUpdated}
+                    onAssetUploaded={onAssetUploaded}
+                    onVersionsLoaded={onVersionsLoaded}
                   />
                 </Grid>
               </Flex>

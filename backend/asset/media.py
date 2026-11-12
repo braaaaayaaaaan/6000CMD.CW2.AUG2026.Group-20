@@ -19,7 +19,7 @@ from rest_framework.permissions import IsAuthenticated
 from user.models import User
 from user.security import session_record
 from rest_framework.exceptions import AuthenticationFailed
-from .files import MIME_TYPES, detect_type, validate_glb, validate_mp4
+from .files import MIME_TYPES, detect_type, validate_glb_container, validate_mp4
 from .models import Asset
 
 SALT = "asset-media"
@@ -77,7 +77,7 @@ def asset_file(request, asset_id):
         size = asset.url.size
         # Legacy container uploads must not fetch external resources either.
         if kind in {"glb", "mp4"}:
-            (validate_glb if kind == "glb" else validate_mp4)(file, size)
+            (validate_glb_container if kind == "glb" else validate_mp4)(file, size)
             file.seek(0)
     except (OSError, ValueError, SuspiciousFileOperation, TypeError, KeyError, AttributeError, struct.error, RecursionError):
         if file is not None:

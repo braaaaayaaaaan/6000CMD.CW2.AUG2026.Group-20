@@ -5,6 +5,9 @@ from django.db.migrations.recorder import MigrationRecorder
 from django.utils import timezone
 from datetime import timedelta
 from pathlib import Path
+import argparse
+import json
+from rest_framework.exceptions import ValidationError
 
 from asset.models import Asset
 from asset.files import (
@@ -13,6 +16,7 @@ from asset.files import (
     quarantine_existing_uploads,
     quarantine_inventory,
     quarantine_recovery_key,
+    validate_image,
 )
 from asset.models import is_quarantine_key
 
@@ -26,6 +30,10 @@ class Command(BaseCommand):
         modes.add_argument("--process-uploads", action="store_true")
         modes.add_argument("--quarantine-existing", action="store_true")
         modes.add_argument("--purge-rejected", action="store_true")
+        modes.add_argument("--validate-image", help=argparse.SUPPRESS)
+        parser.add_argument(
+            "--image-type", choices=("jpg", "png"), help=argparse.SUPPRESS
+        )
         parser.add_argument(
             "--apply",
             action="store_true",
@@ -40,6 +48,23 @@ class Command(BaseCommand):
             raise CommandError("--apply requires --quarantine-existing.")
         if options["retry_errors"] and not options["process_uploads"]:
             raise CommandError("--retry-errors requires --process-uploads.")
+        if options["validate_image"]:
+            if options["delete"] or not options["image_type"]:
+                raise CommandError(
+                    "Internal image validation requires an image type and cannot delete files."
+                )
+            try:
+                if validate_image(
+                    options["validate_image"], options["image_type"]
+                ) is not True:
+                    raise RuntimeError("Image validation did not complete.")
+            except ValidationError as error:
+                self.stdout.write(
+                    json.dumps({"valid": False, "reason": str(error.detail[0])})
+                )
+            else:
+                self.stdout.write(json.dumps({"valid": True}))
+            return
         if options["quarantine_existing"]:
             if options["delete"]:
                 raise CommandError(
@@ -115,7 +140,7 @@ class Command(BaseCommand):
                 limit=options["limit"], retry_errors=options["retry_errors"]
             )
             self.stdout.write(
-                "%s upload job(s) processed. Files remain quarantined until required file-type validation passes."
+                "%s upload job(s) processed. Files passing their required image, video or GLB checks can be published."
                 % count
             )
             return

@@ -23,13 +23,13 @@ import { RxPinBottom, RxEyeOpen } from "react-icons/rx";
 import Sketch from "@uiw/react-color-sketch";
 import { api, downloadAsset, errorMessage } from "@/utils/api";
 import { formatDateTime } from "@/utils/dateTime";
-import { assetProcessingMessage } from "@/utils/assetFiles";
+import { hasProcessingAssets, mergeAssetResource } from "@/utils/assetFiles";
 import { toaster } from "@/styles/ui/toaster";
 import useBrowserSession from "@/hooks/useBrowserSession";
 import useApiResource from "@/hooks/useApiResource";
 import EditAssetModal from "../EditAssetModal";
 import UpdateAssetModal from "../UpdateAssetModal";
-import PreviewAssetMedia from "./PreviewAssetMedia";
+import PreviewAssetMedia, { AssetProcessingStatus } from "./PreviewAssetMedia";
 
 export default function PreviewAssetCardv2({
   asset,
@@ -44,23 +44,30 @@ export default function PreviewAssetCardv2({
   onHsvaChange,
   onAssetDeleted,
   onAssetUpdated,
+  onAssetUploaded,
+  onVersionsLoaded,
 }) {
   const session = useBrowserSession();
   const editable = session.ready && ["Editor", "Admin"].includes(session.group);
   const download = (asset, filename) =>
-    downloadAsset(asset, filename).catch((error) =>
-      toaster.create({ description: errorMessage(error), type: "error" }),
+    downloadAsset(asset, filename).catch(() =>
+      toaster.create({ description: "Couldn't download this file. Please try again.", type: "error" }),
     );
   const history = useApiResource(
     "/get-all-file-versions/" + encodeURIComponent(asset.code) + "/",
     {
       enabled: isOpen,
+      pollWhile: hasProcessingAssets,
+      mergeData: mergeAssetResource,
+      onData: onVersionsLoaded,
+      failureMessage: "Couldn't load version history. Please refresh to try again.",
       refreshKey: JSON.stringify([
         asset.id,
         asset.name,
         asset.description,
         asset.tags,
         asset.version_no,
+        asset.processing_status,
       ]),
     },
   );
@@ -75,7 +82,7 @@ export default function PreviewAssetCardv2({
     ["Version", asset.version_no],
     ["Upload Datetime", formatDateTime(asset.upload_datetime)],
     ["Uploaded By", asset.uploaded_by],
-    ["Status", assetProcessingMessage(asset)],
+    ["Status", <AssetProcessingStatus key="status" asset={(history.data || []).find((version) => version.id === asset.id) || asset} showDetail />],
     ["File Type", asset.file_type],
     ["File Size", Number(asset.file_size).toFixed(2) + " MB"],
   ];
@@ -153,8 +160,8 @@ export default function PreviewAssetCardv2({
                   />
                   <UpdateAssetModal
                     asset={asset}
-                    onAssetUpdated={(updated) => {
-                      onAssetUpdated?.(updated);
+                    onAssetUpdated={(updated, context) => {
+                      onAssetUploaded?.(updated, context);
                       history.refresh();
                     }}
                   />
@@ -293,6 +300,7 @@ export default function PreviewAssetCardv2({
                 <Button onClick={history.refresh}>Retry versions</Button>
               </Stack>
             )}
+            {history.pollError && <Text role="status" fontSize="sm" color="fg.muted" mb="2">{history.pollError}</Text>}
             {!history.loading && !history.error && !history.data?.length && (
               <Text>No versions found.</Text>
             )}
@@ -313,7 +321,7 @@ export default function PreviewAssetCardv2({
                       <Table.Cell overflowWrap="anywhere">
                         {version.name}({version.version_no}).{version.file_type}
                       </Table.Cell>
-                      <Table.Cell>{assetProcessingMessage(version)}</Table.Cell>
+                      <Table.Cell><AssetProcessingStatus asset={version} showDetail /></Table.Cell>
                       <Table.Cell>
                         <Flex direction="row" alignItems="center" gap="8px">
                           <Dialog.Root lazyMount unmountOnExit>

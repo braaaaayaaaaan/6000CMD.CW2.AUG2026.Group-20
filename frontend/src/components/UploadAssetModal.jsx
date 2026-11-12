@@ -10,24 +10,42 @@ import {
   Icon,
   Input,
   Portal,
+  Progress,
   Stack,
   Text,
   Textarea,
 } from "@chakra-ui/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MdCloudUpload } from "react-icons/md";
 import { LuUpload } from "react-icons/lu";
-import { api, errorMessage } from "@/utils/api";
+import { api } from "@/utils/api";
 import {
   ACCEPTED_FILES,
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_MB,
   validateAssetFile,
+  uploadErrorMessage,
+  uploadProgressPercent,
+  isAssetProcessing,
 } from "@/utils/assetFiles";
 import useBrowserSession from "@/hooks/useBrowserSession";
 import useTags from "@/hooks/useTags";
+import useApiResource from "@/hooks/useApiResource";
 import AssetTag from "./AssetTag";
-import { toaster } from "@/styles/ui/toaster";
+import { toaster, notifyUploadStatus, uploadToast } from "@/styles/ui/toaster";
+
+// Follow only uploads started in this mounted workspace when their management
+// card is off-screen. Visible cards already share the collection's polling.
+const keepWatchingUpload = (asset) => !asset || isAssetProcessing(asset);
+export function UploadStatusTracker({ assetId, enabled, onStatus }) {
+  useApiResource("/assets/" + encodeURIComponent(assetId) + "/", {
+    enabled,
+    pollWhile: keepWatchingUpload,
+    onData: (asset) => onStatus([asset]),
+    failureMessage: "Status is unavailable. Refresh Manage uploads to check again.",
+  });
+  return null;
+}
 
 export default function UploadAssetModal({ asset, onAssetUploaded }) {
   const session = useBrowserSession();
@@ -39,7 +57,14 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
   const [selectedTags, setSelectedTags] = useState([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [progress, setProgress] = useState(null);
   const busy = useRef(false);
+  const request = useRef(null);
+  const activeToast = useRef(null);
+  useEffect(() => () => {
+    request.current?.abort();
+    if (activeToast.current) toaster.dismiss(activeToast.current);
+  }, []);
 
   function changeOpen({ open: next }) {
     if (busy.current) return;
@@ -49,6 +74,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
       setFile(null);
       setSelectedTags([]);
       setSaveError("");
+      setProgress(null);
     }
     setOpen(next);
   }
@@ -59,6 +85,12 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
     busy.current = true;
     setSaving(true);
     setSaveError("");
+    setProgress(null);
+    const controller = new AbortController();
+    request.current = controller;
+    const toastId = toaster.create({ title: file?.name, description: "Uploading file…", type: "loading" });
+    activeToast.current = toastId;
+    let uploaded = null;
     try {
       await validateAssetFile(file);
       if (!session.username)
@@ -76,21 +108,29 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
       if (asset) {
         data.append("code", asset.code);
       }
-      const response = await api.post("/assets/", data);
-      setOpen(false);
-      onAssetUploaded?.(response.data);
-      toaster.create({
-        description:
-          "Upload received. The file is quarantined while required file-type validation is pending.",
-        type: "info",
+      const response = await api.post("/assets/", data, {
+        signal: controller.signal,
+        onUploadProgress: (event) => {
+          if (!controller.signal.aborted) setProgress(uploadProgressPercent(event));
+        },
       });
+      uploaded = response.data;
     } catch (error) {
-      setSaveError(
-        errorMessage(error, "Unable to upload this file. Please try again."),
-      );
+      if (!controller.signal.aborted) {
+        setSaveError(uploadErrorMessage(error));
+        uploadToast(toastId, { description: "Upload failed. Please try again.", type: "error", duration: 6500 });
+      }
     } finally {
       busy.current = false;
       setSaving(false);
+      request.current = null;
+      activeToast.current = null;
+    }
+    if (uploaded && !controller.signal.aborted) {
+      const context = { toastId, previousApproved: asset?.processing_status === "approved" };
+      notifyUploadStatus(uploaded, context);
+      setOpen(false);
+      onAssetUploaded?.(uploaded, context);
     }
   }
 
@@ -131,8 +171,8 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
             <Dialog.Body pb="4">
               <Stack gap="4">
                 <Text fontSize="sm">
-                  Files become available after required file-type validation
-                  passes.{asset && " Approved older versions remain available."}
+                  We&apos;ll check your file before it appears in the library.
+                  {asset && " Earlier ready versions stay available while we check the new one."}
                 </Text>
                 {!asset && (
                   <>
@@ -181,7 +221,10 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
                 >
                   {!asset && <FileUpload.Label>File</FileUpload.Label>}
                   <FileUpload.HiddenInput />
-                  <FileUpload.Dropzone>
+                  <FileUpload.Dropzone borderColor={file ? "blue.500" : undefined}
+                    _hover={{ borderColor: "blue.500" }}
+                    _focusVisible={{ outline: "2px solid", outlineColor: "blue.500" }}
+                    css={{ '&[data-dragging]': { borderColor: 'var(--chakra-colors-blue-500)' }, '@media (prefers-reduced-motion: no-preference)': { transition: 'border-color 150ms ease' } }}>
                     <Icon size="md" color="fg.muted">
                       {asset ? <LuUpload /> : <MdCloudUpload />}
                     </Icon>
@@ -193,8 +236,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
                           <>
                             Drop a file here.
                             <br />
-                            Supported files only include (.jpg, .png, .mp4, and
-                            .glb).
+                            JPG, JPEG, PNG, MP4 and GLB.
                           </>
                         )}
                       </Box>
@@ -203,6 +245,19 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
                   </FileUpload.Dropzone>
                   <FileUpload.List />
                 </FileUpload.Root>
+                {saving && (
+                  <Stack gap="2" role="status" aria-live="polite">
+                    <Text fontSize="sm">
+                      {progress === 100 ? "Finishing upload… Waiting for the server." : "Uploading file…"}
+                      {progress !== null && ` ${progress}%`}
+                    </Text>
+                    <Progress.Root value={progress} size="xs" colorPalette="blue" aria-label="File upload progress">
+                      <Progress.Track rounded="full"><Progress.Range
+                        css={{ '@media (prefers-reduced-motion: no-preference)': { transition: 'width 150ms ease' }, '@media (prefers-reduced-motion: reduce)': { animation: 'none !important' } }}
+                      /></Progress.Track>
+                    </Progress.Root>
+                  </Stack>
+                )}
                 {!asset && (
                   <Field.Root>
                     <Field.Label>Tags</Field.Label>
@@ -248,7 +303,8 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
                 color={asset ? undefined : "white"}
                 loading={saving}
                 loadingText="Uploading…"
-                disabled={saving}
+                minW="28"
+                disabled={saving || !file}
               >
                 Upload
               </Button>

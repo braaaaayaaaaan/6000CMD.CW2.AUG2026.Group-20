@@ -1,16 +1,35 @@
 "use client";
 
-import { Button, Stack, Text } from "@chakra-ui/react";
+import { Badge, Button, Spinner, Stack, Text } from "@chakra-ui/react";
+import { LuCircleCheck, LuCircleX, LuCircleAlert } from "react-icons/lu";
 import Script from "next/script";
 import { useEffect, useState } from "react";
-import { api, errorMessage, mediaUrl } from "@/utils/api";
-import { assetProcessingMessage } from "@/utils/assetFiles";
+import { api, mediaUrl } from "@/utils/api";
+import { assetProcessingDetail, assetProcessingMessage, isAssetProcessing, restrictModelResources } from "@/utils/assetFiles";
 import PreviewImageAsset from "./PreviewImageAsset";
 import PreviewVideoAsset from "./PreviewVideoAsset";
 
 function modelNumber(value) {
   const number = Number.parseFloat(value);
   return Number.isFinite(number) ? number : 1;
+}
+
+export function AssetProcessingStatus({ asset, showDetail = false }) {
+  const pending = isAssetProcessing(asset);
+  const approved = asset.processing_status === "approved";
+  const rejected = asset.processing_status === "rejected";
+  const StatusIcon = approved ? LuCircleCheck : rejected ? LuCircleX : LuCircleAlert;
+  return (
+    <Stack gap="2" align="start" minW="0">
+      <Badge colorPalette={pending ? "blue" : approved ? "green" : rejected ? "red" : "orange"}
+        rounded="full" px="2.5" py="1" role="status" aria-live="polite"
+        css={{ '@media (prefers-reduced-motion: no-preference)': { transition: 'background-color 150ms ease, color 150ms ease' } }}>
+        {pending ? <Spinner size="xs" css={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }} /> : <StatusIcon aria-hidden="true" />}
+        {assetProcessingMessage(asset)}
+      </Badge>
+      {showDetail && assetProcessingDetail(asset) && <Text fontSize="sm" color="fg.muted" overflowWrap="anywhere">{assetProcessingDetail(asset)}</Text>}
+    </Stack>
+  );
 }
 
 export default function PreviewAssetMedia({
@@ -21,7 +40,9 @@ export default function PreviewAssetMedia({
   const [scriptError, setScriptError] = useState(false);
   const [media, setMedia] = useState(null);
   const [attempt, setAttempt] = useState(0);
+  const [modelSource, setModelSource] = useState("");
   const approved = asset.processing_status === "approved";
+  const src = mediaUrl(media?.key === asset.url ? media.url : asset.url);
   useEffect(() => {
     if (!approved) return;
     if (!attempt && asset.url_expires_at * 1000 > Date.now()) return;
@@ -39,15 +60,32 @@ export default function PreviewAssetMedia({
             error: "",
           });
       })
-      .catch((error) => {
+      .catch(() => {
         if (!controller.signal.aborted)
           setMedia({
             key: asset.url,
-            error: errorMessage(error, "Unable to refresh this preview."),
+            error: "Unable to refresh this preview. Please try again.",
           });
       });
     return () => controller.abort();
   }, [asset.id, asset.url, asset.url_expires_at, attempt, approved]);
+
+  useEffect(() => {
+    if (!approved || asset.file_type !== "glb" || !src) return;
+    let active = true;
+    let release;
+    customElements.whenDefined("model-viewer").then(() => {
+      if (!active) return;
+      release = restrictModelResources(customElements.get("model-viewer"), src);
+      setModelSource(src);
+    }).catch(() => {
+      if (active) setScriptError(true);
+    });
+    return () => {
+      active = false;
+      release?.();
+    };
+  }, [approved, asset.file_type, src]);
 
   function mediaFailed() {
     if (media?.key !== asset.url || media.expires * 1000 <= Date.now())
@@ -61,12 +99,10 @@ export default function PreviewAssetMedia({
   }
   if (!approved)
     return (
-      <Stack role="status" p="3">
-        <Text>{assetProcessingMessage(asset)}</Text>
-        <Text fontSize="sm">
-          {asset.processing_detail ||
-            "This file is unavailable until required file-type validation passes."}
-        </Text>
+      <Stack p="3" h="full" justify="center" bg={compact ? "bg.muted" : undefined} rounded="md">
+        {compact ? <Text fontSize="sm" color="fg.muted" textAlign="center">
+          {isAssetProcessing(asset) ? "Preview available when ready" : "Preview unavailable"}
+        </Text> : <AssetProcessingStatus asset={asset} showDetail />}
       </Stack>
     );
   if (media?.key === asset.url && media.error)
@@ -78,7 +114,6 @@ export default function PreviewAssetMedia({
         </Button>
       </Stack>
     );
-  const src = mediaUrl(media?.key === asset.url ? media.url : asset.url);
   if (["png", "jpg"].includes(asset.file_type)) {
     return (
       <PreviewImageAsset
@@ -119,7 +154,7 @@ export default function PreviewAssetMedia({
         src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js"
         onError={() => setScriptError(true)}
       />
-      <model-viewer
+      {modelSource === src && <model-viewer
         alt={asset.name}
         src={src}
         with-credentials=""
@@ -138,7 +173,7 @@ export default function PreviewAssetMedia({
           borderRadius: "10px",
           backgroundColor: modelOptions.backgroundColor || "transparent",
         }}
-      />
+      />}
     </>
   );
 }

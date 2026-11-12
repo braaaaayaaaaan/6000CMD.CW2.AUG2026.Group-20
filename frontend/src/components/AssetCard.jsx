@@ -9,26 +9,30 @@ import {
   Stack,
   Text,
 } from "@chakra-ui/react";
-import { useMemo, useState } from "react";
-import { useSelector } from "react-redux";
+import { useMemo, useRef, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { setKeyword } from "@/app/searchSlice";
 import useBrowserSession from "@/hooks/useBrowserSession";
 import useApiResource from "@/hooks/useApiResource";
 import useDebouncedValue from "@/hooks/useDebouncedValue";
 import useTags from "@/hooks/useTags";
-import { downloadAsset, errorMessage } from "@/utils/api";
+import { downloadAsset } from "@/utils/api";
 import { formatDateTime } from "@/utils/dateTime";
-import { assetProcessingMessage } from "@/utils/assetFiles";
-import { toaster } from "@/styles/ui/toaster";
-import UploadAssetModal from "./UploadAssetModal";
+import { hasProcessingAssets, isAssetProcessing, mergeAssetResource } from "@/utils/assetFiles";
+import { toaster, notifyUploadStatus } from "@/styles/ui/toaster";
+import UploadAssetModal, { UploadStatusTracker } from "./UploadAssetModal";
 import BasicFilterComponent from "./filters/BasicFilterComponent";
 import TagFilterComponent from "./filters/TagFilterComponent";
 import PreviewAssetModal from "./previews/PreviewAssetModal";
-import PreviewAssetMedia from "./previews/PreviewAssetMedia";
+import PreviewAssetMedia, { AssetProcessingStatus } from "./previews/PreviewAssetMedia";
 import EditAssetModal from "./EditAssetModal";
 import ListPagination from "./ListPagination";
 
 export default function AssetCard() {
   const session = useBrowserSession();
+  const dispatch = useDispatch();
+  const observed = useRef(new Map());
+  const [uploadsToWatch, setUploadsToWatch] = useState([]);
   const { tags, loading: tagsLoading, error: tagsError } = useTags();
   const [filter, setFilter] = useState("");
   const [tagFilter, setTagFilter] = useState("");
@@ -45,7 +49,31 @@ export default function AssetCard() {
   if (filter) params.set("ordering", filter);
   if (tagFilter) params.set("tags", tagFilter);
   if (managingUploads) params.set("uploads", "1");
-  const resource = useApiResource("/assets/?" + params.toString());
+  function observeAssets(data) {
+    const rows = Array.isArray(data) ? data : data.results;
+    const completed = new Set();
+    let approved = false;
+    for (const asset of rows) {
+      const previous = observed.current.get(asset.id);
+      if (previous && isAssetProcessing(previous) && !isAssetProcessing(asset)
+        && ["approved", "rejected", "error"].includes(asset.processing_status)) {
+        notifyUploadStatus(asset, previous);
+        completed.add(asset.id);
+        approved ||= asset.processing_status === "approved";
+      }
+      observed.current.set(asset.id, { ...previous, processing_status: asset.processing_status });
+    }
+    if (completed.size) {
+      setUploadsToWatch((ids) => ids.filter((id) => !completed.has(id)));
+    }
+    if (approved && !managingUploads) resource.refresh();
+  }
+  const resource = useApiResource("/assets/?" + params.toString(), {
+    pollWhile: managingUploads ? hasProcessingAssets : null,
+    mergeData: mergeAssetResource,
+    onData: observeAssets,
+    failureMessage: "Couldn't load assets. Please refresh to try again.",
+  });
   const assets = resource.data?.results || [];
   const count = resource.data?.count || 0;
   const tagNames = useMemo(
@@ -53,8 +81,8 @@ export default function AssetCard() {
     [tags],
   );
   const download = (asset) =>
-    downloadAsset(asset).catch((error) =>
-      toaster.create({ description: errorMessage(error), type: "error" }),
+    downloadAsset(asset).catch(() =>
+      toaster.create({ description: "Couldn't download this file. Please try again.", type: "error" }),
     );
 
   function changePage(next) {
@@ -74,9 +102,14 @@ export default function AssetCard() {
     resource.refresh();
   }
 
-  function uploaded(updated) {
+  function uploaded(updated, context = {}) {
+    observed.current.set(updated.id, { ...context, processing_status: updated.processing_status });
+    if (isAssetProcessing(updated)) setUploadsToWatch((ids) => [...new Set([...ids, updated.id])]);
+    dispatch(setKeyword(""));
+    setFilter("");
+    setTagFilter("");
     setShowUploads(true);
-    changePage(1);
+    setPagination({ queryKey: null, page: 1 });
     assetChanged(updated);
   }
 
@@ -106,6 +139,8 @@ export default function AssetCard() {
 
   return (
     <Box>
+      {editable && uploadsToWatch.map((id) => <UploadStatusTracker key={id} assetId={id}
+        enabled={!managingUploads || !assets.some((asset) => asset.id === id)} onStatus={observeAssets} />)}
       <Flex gap="2" justify="space-between" wrap="wrap">
         {editable && (
           <Button
@@ -132,6 +167,9 @@ export default function AssetCard() {
           {editable && <UploadAssetModal onAssetUploaded={uploaded} />}
         </Box>
       </Flex>
+      {managingUploads && <Text color="fg.muted" fontSize="sm" mt="3">
+        All uploads are shown here, including files being checked. Only ready files appear in the library.
+      </Text>}
       <br />
       <br />
       {resource.loading && (
@@ -150,6 +188,7 @@ export default function AssetCard() {
           </Button>
         </Stack>
       )}
+      {resource.pollError && <Text role="status" fontSize="sm" color="fg.muted" mb="3">{resource.pollError}</Text>}
       {!resource.loading && !resource.error && !assets.length && (
         <Text role="status">
           {search || tagFilter
@@ -173,9 +212,8 @@ export default function AssetCard() {
                 <Box>
                   <Card.Title overflowWrap="anywhere">{asset.name}</Card.Title>
                   <p>{Number(asset.file_size).toFixed(2)} MB</p>
-                  <Text fontSize="sm" role="status">
-                    Version {asset.version_no}: {assetProcessingMessage(asset)}
-                  </Text>
+                  <Text fontSize="sm" color="fg.muted" mb="2">Version {asset.version_no}</Text>
+                  <AssetProcessingStatus asset={asset} showDetail={managingUploads} />
                   <Card.Description overflowWrap="anywhere">
                     {asset.description}
                   </Card.Description>
@@ -199,6 +237,8 @@ export default function AssetCard() {
                 asset={asset}
                 onAssetDeleted={deleted}
                 onAssetUpdated={assetChanged}
+                onAssetUploaded={uploaded}
+                onVersionsLoaded={observeAssets}
               />
               <Button
                 variant="surface"
@@ -208,7 +248,10 @@ export default function AssetCard() {
                 Download
               </Button>
               {editable && (
-                <EditAssetModal asset={asset} onAssetUpdated={assetChanged} />
+                <>
+                  {["rejected", "error"].includes(asset.processing_status) && <UploadAssetModal asset={asset} onAssetUploaded={uploaded} />}
+                  <EditAssetModal asset={asset} onAssetUpdated={assetChanged} />
+                </>
               )}
             </Card.Footer>
           </Card.Root>
