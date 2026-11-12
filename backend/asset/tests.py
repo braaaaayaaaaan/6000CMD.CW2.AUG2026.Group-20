@@ -25,7 +25,7 @@ class AssetMigrationGraphTests(SimpleTestCase):
             fresh.project_state([REPLACEMENT]),
         )
         self.assertEqual(fresh.graph.leaf_nodes("asset"), [
-            ("asset", "0011_assetseries_asset_unique_asset_version_and_more"),
+            ("asset", "0012_asset_sha256"),
         ])
 
     def test_partial_history_keeps_original_graph_for_explicit_review(self):

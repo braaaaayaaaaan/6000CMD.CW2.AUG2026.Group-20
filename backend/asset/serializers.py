@@ -1,14 +1,15 @@
 from .models import Asset, AssetSeries, Tags
-from .files import validate_file
+from .files import validate_file, file_digest
 from .media import signed_media_url
 from rest_framework import serializers
 
 
 class AssetSerializer(serializers.ModelSerializer):
+    url = serializers.FileField(write_only=True)
     class Meta:
         model = Asset
         fields = "__all__"
-        read_only_fields = ["version_no", "uploaded_by", "file_type", "file_size", "upload_datetime"]
+        read_only_fields = ["version_no", "uploaded_by", "file_type", "file_size", "upload_datetime", "sha256"]
         # The next version is allocated under a database lock, after validation.
         validators = []
 
@@ -18,7 +19,7 @@ class AssetSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         errors = {}
-        for field in ("version_no", "uploaded_by", "file_type", "file_size"):
+        for field in ("version_no", "uploaded_by", "file_type", "file_size", "sha256"):
             if field in self.initial_data:
                 errors[field] = "This field is determined by the server."
         code = attrs.get("code")
@@ -33,6 +34,7 @@ class AssetSerializer(serializers.ModelSerializer):
         if "url" in attrs:
             attrs["file_type"] = self.detected_type
             attrs["file_size"] = attrs["url"].size / (1024 * 1024)
+            attrs["sha256"] = file_digest(attrs["url"])
         return attrs
 
     def to_representation(self, instance):

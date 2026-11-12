@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.core.exceptions import SuspiciousFileOperation
 from django.db.models import Count, F, Max, OuterRef, Q, Subquery
 from django.shortcuts import get_object_or_404
 from rest_framework import filters, viewsets
@@ -47,7 +48,7 @@ class AssetViewSet(viewsets.ModelViewSet):
 
     def get_throttles(self):
         throttles = super().get_throttles()
-        if self.action == "create":
+        if self.action in {"create", "update", "partial_update"}:
             self.throttle_scope = "uploads"
             throttles.append(ScopedRateThrottle())
         return throttles
@@ -85,7 +86,11 @@ class AssetViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="media-url")
     def media_url(self, request, pk=None):
         asset = self.get_object()
-        if not asset.url or not asset.url.storage.exists(asset.url.name):
+        try:
+            exists = asset.url and asset.url.storage.exists(asset.url.name)
+        except (OSError, ValueError, SuspiciousFileOperation):
+            exists = False
+        if not exists:
             raise NotFound(MISSING_FILE_MESSAGE)
         return Response(signed_media_url(asset, request))
 

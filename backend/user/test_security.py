@@ -228,17 +228,25 @@ class AccountSecurityTests(TestCase):
         self.assertFalse(AccountSession.objects.exists())
         challenge = response.data["challenge"]
         setup = self.client.post("/api/account/mfa/enrol/", {"challenge": challenge}, format="json")
+        self.assertEqual(setup.status_code, 400)
+        self.assertNotIn("secret", setup.data)
+        user.refresh_from_db()
+        self.assertFalse(user.mfa_pending_secret)
+        self.assertEqual(self.client.post("/api/account/mfa/enrol/", {"challenge": challenge, "password": "wrong"}, format="json").status_code, 401)
+        setup = self.client.post("/api/account/mfa/enrol/", {"challenge": challenge, "password": PASSWORD}, format="json")
         self.assertEqual(setup.status_code, 200, setup.data)
         self.assertTrue(setup.data["qr_code"].startswith("data:image/svg+xml;base64,"))
+        old_challenge = challenge
+        challenge = setup.data["challenge"]
+        self.assertNotEqual(challenge, old_challenge)
         proof = {"challenge": challenge, "code": pyotp.TOTP(setup.data["secret"]).now()}
-        self.assertEqual(self.client.post("/api/account/mfa/confirm/", proof, format="json").status_code, 400)
-        self.assertEqual(self.client.post("/api/account/mfa/confirm/", {**proof, "password": "wrong"}, format="json").status_code, 401)
-        self.assertEqual(self.client.post("/api/account/mfa/confirm/", {**proof, "password": PASSWORD, "code": "invalid"}, format="json").status_code, 401)
+        self.assertEqual(self.client.post("/api/account/mfa/confirm/", {**proof, "challenge": old_challenge}, format="json").status_code, 401)
+        self.assertEqual(self.client.post("/api/account/mfa/confirm/", {**proof, "code": "invalid"}, format="json").status_code, 401)
         self.assertFalse(AccountSession.objects.exists())
         user.refresh_from_db()
         self.assertFalse(user.mfa_enabled)
-        self.assertEqual(user.auth_failures, 2)
-        result = self.client.post("/api/account/mfa/confirm/", {**proof, "password": PASSWORD}, format="json")
+        self.assertEqual(user.auth_failures, 1)
+        result = self.client.post("/api/account/mfa/confirm/", proof, format="json")
         self.assertEqual(result.status_code, 200, result.data)
         self.assertNotIn("recovery_codes", result.data)
         self.assertEqual(self.client.get("/assets/").status_code, 200)
@@ -285,7 +293,7 @@ class AccountSecurityTests(TestCase):
         media_token = signing.dumps({"asset": str(asset.pk), "user": str(user.pk),
                                      "version": user.token_version, "auth": user.get_session_auth_hash(),
                                      "sid": str(record.pk)}, salt="asset-media")
-        self.assertEqual(APIClient().get(reverse("asset-file", args=[asset.pk]), {"token": media_token}).status_code, 403)
+        self.assertEqual(APIClient().get(reverse("asset-file", args=[asset.pk]), {"token": media_token}).status_code, 401)
 
     def test_totp_and_recovery_codes_are_single_use(self):
         user = self.user(role="Editor")
@@ -526,7 +534,7 @@ class AccountSecurityTests(TestCase):
         url = response.data["url"]
         path = url.split("http://testserver", 1)[-1]
         self.client.post("/api/logout/")
-        self.assertEqual(self.client.get(path).status_code, 403)
+        self.assertEqual(self.client.get(path).status_code, 401)
 
     @override_settings(ACCOUNT_ALLOWED_EMAIL_DOMAINS=["university.example"])
     def test_optional_admission_domain_setting_is_explicit(self):
@@ -659,3 +667,148 @@ class AccountSecurityTests(TestCase):
         del self.client.cookies[settings.AUTH_COOKIE_ACCESS]
         del self.client.cookies[settings.AUTH_COOKIE_REFRESH]
         self.assertEqual(self.client.get("/admin/").status_code, 302)
+
+    def test_pending_seed_is_bound_to_one_password_verified_challenge(self):
+        user = self.user()
+        first = self.login(user).data["challenge"]
+        setup = self.client.post("/api/account/mfa/enrol/", {"challenge": first}, format="json").data
+        retry = self.client.post("/api/account/mfa/enrol/", {"challenge": first}, format="json").data
+        self.assertEqual(setup["secret"], retry["secret"])
+        second = self.login(user).data["challenge"]
+        self.assertEqual(self.client.post("/api/account/mfa/enrol/", {"challenge": first}, format="json").status_code, 401)
+        next_setup = self.client.post("/api/account/mfa/enrol/", {"challenge": second}, format="json").data
+        self.assertNotEqual(setup["secret"], next_setup["secret"])
+        result = self.client.post("/api/account/mfa/confirm/", {"challenge": second,
+            "code": pyotp.TOTP(next_setup["secret"]).now()}, format="json")
+        self.assertEqual(result.status_code, 200, result.data)
+
+    def test_profile_password_failures_commit_and_enforce_lockout(self):
+        user = self.user()
+        self.sign_in(user)
+        url = f"/users/{user.pk}/"
+        payload = {"password1": NEW_PASSWORD, "password2": NEW_PASSWORD, "current_password": "wrong"}
+        for count in range(settings.AUTH_MAX_FAILURES):
+            self.assertEqual(self.client.patch(url, payload, format="json").status_code, 400)
+            user.refresh_from_db()
+            self.assertEqual(user.auth_failures, count + 1)
+        self.assertGreater(user.auth_locked_until, timezone.now())
+        payload["current_password"] = PASSWORD
+        self.assertEqual(self.client.patch(url, payload, format="json").status_code, 400)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password(PASSWORD))
+        User.objects.filter(pk=user.pk).update(auth_locked_until=timezone.now() - timedelta(seconds=1))
+        self.assertEqual(self.client.patch(url, payload, format="json").status_code, 200)
+        user.refresh_from_db()
+        self.assertEqual(user.auth_failures, 0)
+        self.assertIsNone(user.auth_locked_until)
+        self.assertEqual(self.client.get("/api/account/me/").status_code, 401)
+
+    def test_profile_username_is_immutable_but_names_remain_editable(self):
+        user = self.user()
+        self.sign_in(user)
+        for method in (self.client.patch, self.client.put):
+            result = method(f"/users/{user.pk}/", {"username": "renamed", "first_name": "Changed"}, format="json")
+            self.assertEqual(result.status_code, 400, result.data)
+        user.refresh_from_db()
+        self.assertEqual(user.username, "viewer")
+        self.assertEqual(user.first_name, "")
+        self.assertEqual(self.client.patch(f"/users/{user.pk}/", {"username": user.username, "first_name": "Changed"}, format="json").status_code, 200)
+
+    def test_spaced_passwords_are_preserved_in_all_account_workflows(self):
+        password = "  " + PASSWORD + "  "
+        result = self.client.post("/users/", {"username": "spaced", "email": "spaced@example.com",
+            "password1": password, "password2": password}, format="json")
+        self.assertEqual(result.status_code, 201, result.data)
+        user = User.objects.get(username="spaced")
+        self.assertTrue(user.check_password(password))
+        self.assertFalse(user.check_password(password.strip()))
+        verified = self.client.post("/api/account/verify-email/", {"token": self.mail_values()["token"]}, format="json")
+        setup = self.client.post("/api/account/mfa/enrol/", {"challenge": verified.data["challenge"], "password": password}, format="json")
+        self.assertEqual(setup.status_code, 200, setup.data)
+        result = self.client.post("/api/account/mfa/confirm/", {"challenge": setup.data["challenge"],
+            "code": pyotp.TOTP(setup.data["secret"]).now()}, format="json")
+        self.assertEqual(result.status_code, 200, result.data)
+        changed = "  " + NEW_PASSWORD + "  "
+        result = self.client.patch(f"/users/{user.pk}/", {"current_password": password,
+            "password1": changed, "password2": changed}, format="json")
+        self.assertEqual(result.status_code, 200, result.data)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password(changed))
+        self.client.post("/api/account/forgot-password/", {"email": user.email}, format="json")
+        result = self.client.post("/api/account/reset-password/", {**self.mail_values(),
+            "password1": password, "password2": password}, format="json")
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(self.client.post("/api/token/", {"username": user.username, "password": password}, format="json").status_code, 200)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password(password))
+
+    def test_sensitive_profile_throttle(self):
+        user = self.user()
+        self.sign_in(user)
+        for _ in range(10):
+            self.assertEqual(self.client.patch(f"/users/{user.pk}/", {"first_name": "Name"}, format="json").status_code, 200)
+        self.assertEqual(self.client.patch(f"/users/{user.pk}/", {"first_name": "Name"}, format="json").status_code, 429)
+
+    def test_admin_assisted_recovery_requires_proof_and_revokes_target_credentials(self):
+        target = self.user()
+        victim = APIClient()
+        self.sign_in(target, victim)
+        target.refresh_from_db()
+        old_secret = target.mfa_secret
+        old_challenge = self.login(target, victim).data["challenge"]
+        operator = self.user("operator", role="Admin")
+        self.sign_in(operator)
+        url = f"/users/{target.pk}/recover-mfa/"
+        approval = {"identity_verified": True, "current_password": PASSWORD}
+        self.assertEqual(self.client.post(url, {"current_password": PASSWORD}, format="json").status_code, 400)
+        self.assertEqual(self.client.post(url, {**approval, "current_password": "wrong"}, format="json").status_code, 400)
+        operator.refresh_from_db()
+        self.assertEqual(operator.auth_failures, 1)
+        with self.assertLogs("dam.audit", level="INFO") as logs:
+            result = self.client.post(url, approval, format="json")
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertTrue(any("mfa_recovery_approved" in line and str(operator.pk) in line and str(target.pk) in line for line in logs.output))
+        self.assertNotIn(PASSWORD, " ".join(logs.output))
+        target.refresh_from_db()
+        self.assertFalse(target.mfa_enabled)
+        self.assertFalse(target.mfa_pending_secret)
+        self.assertEqual(target.mfa_recovery_hashes, [])
+        self.assertTrue(target.email_verified)
+        self.assertFalse(target.account_sessions.filter(revoked=False).exists())
+        self.assertEqual(victim.get("/assets/").status_code, 401)
+        self.assertEqual(victim.post("/api/token/refresh/").status_code, 401)
+        self.assertEqual(victim.post("/api/account/mfa/verify/", {"challenge": old_challenge, "code": "123456"}, format="json").status_code, 401)
+        setup = self.login(target, victim)
+        self.assertTrue(setup.data["enrolment_required"])
+        self.enrol(target, victim, first=setup)
+        target.refresh_from_db()
+        self.assertNotEqual(old_secret, target.mfa_secret)
+
+    def test_recovery_is_admin_only_and_requires_recent_mfa(self):
+        target = self.user("target")
+        for name, role in (("viewer", "Viewer"), ("editor", "Editor"), ("operator", "Admin")):
+            cache.clear()
+            actor = self.user(name, role=role)
+            self.sign_in(actor)
+            if role == "Admin":
+                AccountSession.objects.filter(user=actor).update(created_at=timezone.now() - timedelta(minutes=6))
+            result = self.client.post(f"/users/{target.pk}/recover-mfa/",
+                {"identity_verified": True, "current_password": PASSWORD}, format="json")
+            self.assertEqual(result.status_code, 400 if role == "Admin" else 403, result.data)
+
+    def test_recovery_rejects_anonymous_self_staff_and_missing_csrf(self):
+        operator = self.user("operator", role="Admin")
+        target = self.user("staff", is_staff=True)
+        target.refresh_from_db()
+        original_version = target.token_version
+        payload = {"identity_verified": True, "current_password": PASSWORD}
+        url = f"/users/{target.pk}/recover-mfa/"
+        self.assertEqual(APIClient().post(url, payload, format="json").status_code, 401)
+        self.sign_in(operator)
+        self.assertEqual(self.client.post(url, payload, format="json").status_code, 400)
+        self.assertEqual(self.client.post(f"/users/{operator.pk}/recover-mfa/", payload, format="json").status_code, 400)
+        strict = APIClient(enforce_csrf_checks=True)
+        strict.cookies = self.client.cookies
+        self.assertEqual(strict.post(url, payload, format="json").status_code, 403)
+        target.refresh_from_db()
+        self.assertEqual(target.token_version, original_version)

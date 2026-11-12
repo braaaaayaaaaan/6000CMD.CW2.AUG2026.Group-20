@@ -1,6 +1,7 @@
 """Allow the configured frontend origins to frame local media previews."""
 
 import logging
+import re
 
 from django.conf import settings
 from django.utils.deprecation import MiddlewareMixin
@@ -35,6 +36,8 @@ class MediaFramePolicyMiddleware(MiddlewareMixin):
     def process_response(self, request, response):
         if not request.path_info.startswith(settings.MEDIA_URL):
             return response
+        response["Cache-Control"] = "private, no-store"
+        response["Referrer-Policy"] = "no-referrer"
 
         origins = settings.MEDIA_FRAME_ALLOWED_ORIGINS
         ancestors = " ".join(["'self'", *origins])
@@ -52,3 +55,10 @@ class MediaFramePolicyMiddleware(MiddlewareMixin):
             # CSP supports an origin allowlist; X-Frame-Options does not.
             response.headers.pop("X-Frame-Options", None)
         return response
+
+
+class RedactSignedMediaTokens(logging.Filter):
+    def filter(self, record):
+        record.msg = re.sub(r"([?&]token=)[^&\s\"']+", r"\1[redacted]", record.getMessage())
+        record.args = ()
+        return True

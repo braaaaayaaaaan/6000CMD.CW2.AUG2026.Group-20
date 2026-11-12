@@ -38,7 +38,7 @@ export default function AccountSecurity() {
     <Text fontWeight="bold">Authenticator Security</Text>
     <Text>Authenticator security is required for every account. Use the current six-digit code from your app to sign in.</Text>
     <Field.Root><Field.Label>Current Password</Field.Label><PasswordInput autoComplete="current-password" maxLength={256} value={password} onChange={(event) => setPassword(event.target.value)} disabled={saving} /></Field.Root>
-    {session.mfa_enabled && <Field.Root><Field.Label>Authenticator Code</Field.Label><Input borderColor="gray.300" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} disabled={saving} /></Field.Root>}
+    {session.mfa_enabled && <Field.Root><Field.Label>Authenticator or Previously Issued Recovery Code</Field.Label><Input borderColor="gray.300" autoComplete="one-time-code" maxLength={64} value={code} onChange={(event) => setCode(event.target.value)} disabled={saving} /></Field.Root>}
     {error && <Text role="alert" color="red.600">{error}</Text>}
     {!session.mfa_enabled && <Button variant="outline" bg="blue.700" color="white" onClick={() => action("setup")} disabled={saving || !password}>Set up authenticator</Button>}
     {session.mfa_enabled && <><Text fontSize="sm">To replace an authenticator, provide a current code or do so within five minutes of signing in with MFA.</Text>
