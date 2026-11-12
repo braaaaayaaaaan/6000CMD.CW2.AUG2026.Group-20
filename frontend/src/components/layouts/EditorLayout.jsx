@@ -13,11 +13,14 @@ export default function EditorLayout({ children }) {
     items.push({ title: "Tag Management", page: "/editor/tag-management", icon: <IoPricetagsSharp /> });
   }
   return (
-    <Container maxW="8xl" px={{ base: "4", md: "8" }} pb="10">
-      <Flex direction="column" gap="6">
-        <NavBar items={items} />
-        <Box minW="0">{children}</Box>
-      </Flex>
-    </Container>
+    <>
+      <Container>
+        <Flex direction="column" gapY="30px">
+          <Box><NavBar items={items} /></Box>
+          <Box minW="0">{children}</Box>
+        </Flex>
+      </Container>
+      <Box h="30px" marginTop="50px" />
+    </>
   );
 }

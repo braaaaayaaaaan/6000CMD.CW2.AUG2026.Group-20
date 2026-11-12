@@ -3,6 +3,7 @@
 import { Box, Button, CloseButton, Dialog, Field, FileUpload, Icon, Input, Portal, Stack, Text, Textarea } from "@chakra-ui/react";
 import { useRef, useState } from "react";
 import { MdCloudUpload } from "react-icons/md";
+import { LuUpload } from "react-icons/lu";
 import { api, errorMessage } from "@/utils/api";
 import { ACCEPTED_FILES, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, validateAssetFile } from "@/utils/assetFiles";
 import useBrowserSession from "@/hooks/useBrowserSession";
@@ -62,38 +63,39 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
   return (
     <Dialog.Root open={open} onOpenChange={changeOpen} closeOnEscape={!saving} closeOnInteractOutside={!saving} lazyMount unmountOnExit>
       <Dialog.Trigger asChild>
-        <Button variant={asset ? "surface" : "solid"} colorPalette="blue" size="sm">
-          <MdCloudUpload />{asset ? "Update" : "Upload Asset"}
+        <Button variant={asset ? "surface" : "outline"} size={asset ? "md" : "sm"}
+          bg={asset ? undefined : "blue.700"} color={asset ? undefined : "white"}>
+          {!asset && <MdCloudUpload />}{asset ? "Update" : "Upload Asset"}
         </Button>
       </Dialog.Trigger>
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
           <Dialog.Content as="form" onSubmit={submit} maxW="lg" w="calc(100% - 2rem)">
-            <Dialog.Header><Dialog.Title>{asset ? "Upload New Version" : "Upload New Asset"}</Dialog.Title></Dialog.Header>
-            <Dialog.Body>
+            <Dialog.Header><Dialog.Title>{asset ? "Update Asset File" : "Upload New Asset"}</Dialog.Title></Dialog.Header>
+            <Dialog.Body pb="4">
               <Stack gap="4">
                 {!asset && <>
-                  <Field.Root required>
+                  <Field.Root>
                     <Field.Label>Name</Field.Label>
-                    <Input value={name} onChange={(event) => setName(event.target.value)} required maxLength={200} disabled={saving} />
+                    <Input placeholder="Name" value={name} onChange={(event) => setName(event.target.value)} required maxLength={200} disabled={saving} />
                   </Field.Root>
-                  <Field.Root required>
+                  <Field.Root>
                     <Field.Label>Description</Field.Label>
-                    <Textarea value={description} onChange={(event) => setDescription(event.target.value)} required disabled={saving} />
+                    <Textarea placeholder="Description" value={description} onChange={(event) => setDescription(event.target.value)} required disabled={saving} />
                   </Field.Root>
                 </>}
-                <FileUpload.Root maxFiles={1} accept={ACCEPTED_FILES} maxFileSize={MAX_UPLOAD_BYTES}
+                <FileUpload.Root maxW="lg" alignItems="stretch" maxFiles={1} accept={ACCEPTED_FILES} maxFileSize={MAX_UPLOAD_BYTES}
                   acceptedFiles={file ? [file] : []} disabled={saving}
                   onFileChange={({ acceptedFiles }) => { setFile(acceptedFiles[0] || null); setSaveError(""); }}
                   onFileReject={() => setSaveError("Choose a JPG, PNG, MP4, or GLB file up to " + MAX_UPLOAD_MB + " MB.")}>
-                  <FileUpload.Label>Asset file</FileUpload.Label>
+                  {!asset && <FileUpload.Label>File</FileUpload.Label>}
                   <FileUpload.HiddenInput />
                   <FileUpload.Dropzone>
-                    <Icon size="md"><MdCloudUpload /></Icon>
+                    <Icon size="md" color="fg.muted">{asset ? <LuUpload /> : <MdCloudUpload />}</Icon>
                     <FileUpload.DropzoneContent>
-                      <Box>Drop a file here or click to browse.</Box>
-                      <Text fontSize="sm">JPG, PNG, MP4, GLB · up to {MAX_UPLOAD_MB} MB</Text>
+                      <Box>{asset ? "Drop your new file here." : <>Drop a file here.<br />Supported files only include (.jpg, .png, .mp4, and .glb).</>}</Box>
+                      <Text fontSize="sm">Up to {MAX_UPLOAD_MB} MB</Text>
                     </FileUpload.DropzoneContent>
                   </FileUpload.Dropzone>
                   <FileUpload.List />
@@ -108,10 +110,10 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
               </Stack>
             </Dialog.Body>
             <Dialog.Footer>
-              <Dialog.ActionTrigger asChild><Button type="button" variant="outline" disabled={saving}>Cancel</Button></Dialog.ActionTrigger>
-              <Button type="submit" loading={saving} loadingText="Uploading…" disabled={saving}>Upload</Button>
+              <Dialog.ActionTrigger asChild><Button type="button" variant={asset ? "surface" : "outline"} colorPalette={asset ? "red" : undefined} disabled={saving}>Cancel</Button></Dialog.ActionTrigger>
+              <Button type="submit" variant={asset ? "surface" : "solid"} bg={asset ? undefined : "blue.700"} color={asset ? undefined : "white"} loading={saving} loadingText="Uploading…" disabled={saving}>Upload</Button>
             </Dialog.Footer>
-            <Dialog.CloseTrigger asChild><CloseButton type="button" disabled={saving} /></Dialog.CloseTrigger>
+            <Dialog.CloseTrigger asChild><CloseButton type="button" size="sm" disabled={saving} /></Dialog.CloseTrigger>
           </Dialog.Content>
         </Dialog.Positioner>
       </Portal>

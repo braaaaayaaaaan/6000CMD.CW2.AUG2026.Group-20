@@ -14,9 +14,9 @@ export default function NavBar({ items = [] }) {
   const current = items.find((item) => item.page === path)?.title || "";
   return (
     <>
-      <Flex py="5" gap="4" align="center" justify="space-between" wrap="wrap">
+      <Flex py="20px" gap="20px" align="center" justify="space-between" bg="white" wrap={{ base: "wrap", md: "nowrap" }}>
         <Link href="/editor/home" aria-label="Digital asset library">
-          <Image src={Logo.src ?? Logo} alt="ManticAI" h="40px" w="auto" maxW={{ base: "150px", md: "220px" }} />
+          <Image src={Logo.src ?? Logo} alt="ManticAI" h="40px" w="auto" />
         </Link>
         <SearchBar />
         <Button asChild size="sm" bg="blue.700" color="white" maxW={{ base: "160px", md: "240px" }}>
@@ -25,17 +25,16 @@ export default function NavBar({ items = [] }) {
           </Link>
         </Button>
       </Flex>
-      {items.length > 0 && (
-        <Tabs.Root value={current} variant="line" colorPalette="blue">
-          <Tabs.List flexWrap="wrap">
-            {items.map((item) => (
-              <Tabs.Trigger key={item.title} value={item.title} asChild>
-                <Link href={item.page}>{item.icon}{item.title}</Link>
-              </Tabs.Trigger>
-            ))}
-          </Tabs.List>
-        </Tabs.Root>
-      )}
+      <Tabs.Root value={current} lazyMount unmountOnExit variant="line" colorPalette="blue">
+        <Tabs.List flexWrap="wrap">
+          {items.map((item) => (
+            <Tabs.Trigger key={item.title} value={item.title} asChild>
+              <Link href={item.page}>{item.icon}{item.title}</Link>
+            </Tabs.Trigger>
+          ))}
+          <Tabs.Indicator unstyled />
+        </Tabs.List>
+      </Tabs.Root>
     </>
   );
 }

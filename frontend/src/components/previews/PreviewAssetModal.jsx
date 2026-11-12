@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, CloseButton, Dialog, Grid, Portal } from "@chakra-ui/react";
+import { Box, Button, CloseButton, Dialog, Flex, Grid, Heading, Portal } from "@chakra-ui/react";
 import { useState } from "react";
 import { hsvaToHexa } from "@uiw/color-convert";
 import PreviewAssetCardv2 from "./PreviewAssetCardv2";
@@ -15,23 +15,26 @@ export default function PreviewAssetModal({ asset, onAssetDeleted, onAssetUpdate
   const modelOptions = { exposure, shadowIntensity, shadowSoftness, backgroundColor: hsvaToHexa(hsva) };
   return (
     <Dialog.Root open={open} onOpenChange={({ open }) => setOpen(open)} size="cover" placement="center" lazyMount unmountOnExit>
-      <Dialog.Trigger asChild><Button variant="surface" size="sm">Preview</Button></Dialog.Trigger>
+      <Dialog.Trigger asChild><Button variant="surface">Preview</Button></Dialog.Trigger>
       <Portal>
         <Dialog.Backdrop /><Dialog.Positioner>
-          <Dialog.Content maxW="1600px" w="calc(100% - 2rem)">
-            <Dialog.Header><Dialog.Title overflowWrap="anywhere">{asset.name}</Dialog.Title></Dialog.Header>
-            <Dialog.Body pb="6">
-              <Grid templateColumns={{ base: "minmax(0, 1fr)", xl: "minmax(0, 4fr) minmax(0, 3fr)" }} gap="5">
-                <Box borderWidth="1px" rounded="lg" minW="0" h={{ base: "300px", md: "480px", xl: "580px" }}>
+          <Dialog.Content>
+            <Dialog.Body>
+              <Flex direction="column" gap="10px" padding="10px" alignItems="flex-start">
+                <Dialog.Title asChild><Heading size="2xl" fontWeight="bold" marginTop="20px" overflowWrap="anywhere">{asset.name}</Heading></Dialog.Title>
+                <Grid w="full" templateColumns={{ base: "minmax(0, 1fr)", xl: "minmax(0, 4fr) minmax(0, 3fr)" }} gap="20px">
+                <Box borderWidth="1px" rounded="md" minW="0" h={{ base: "300px", md: "480px", xl: "580px" }}
+                  bg={asset.file_type === "glb" ? "transparent" : "gray.100"}>
                   <PreviewAssetMedia asset={asset} modelOptions={modelOptions} />
                 </Box>
                 <PreviewAssetCardv2 asset={asset} isOpen={open} {...modelOptions}
                   hsva={hsva} onExposureChange={setExposure}
                   onShadowIntensityChange={setShadowIntensity} onShadowSoftnessChange={setShadowSoftness}
                   onHsvaChange={setHsva} onAssetDeleted={onAssetDeleted} onAssetUpdated={onAssetUpdated} />
-              </Grid>
+                </Grid>
+              </Flex>
             </Dialog.Body>
-            <Dialog.CloseTrigger asChild><CloseButton /></Dialog.CloseTrigger>
+            <Dialog.CloseTrigger asChild><CloseButton size="sm" /></Dialog.CloseTrigger>
           </Dialog.Content>
         </Dialog.Positioner>
       </Portal>

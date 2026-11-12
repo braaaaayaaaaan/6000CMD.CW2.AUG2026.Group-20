@@ -1,7 +1,8 @@
 "use client";
 
-import { Box, Button, Card, CloseButton, Container, Dialog, Field, Grid, Heading, Input, Portal, Spinner, Stack, Tabs, Text } from "@chakra-ui/react";
+import { Box, Button, Card, CloseButton, Container, Dialog, Field, Grid, GridItem, Heading, Input, Portal, Spinner, Stack, Tabs, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
+import { CgUserlane } from "react-icons/cg";
 import { useRouter } from "next/navigation";
 import NavBar from "@/components/NavBar";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -81,66 +82,89 @@ export default function UserProfile() {
   }
 
   return (
-    <Container maxW="7xl" px={{ base: "4", md: "8" }} pb="8">
+    <Container>
       <NavBar />
-      <Grid templateColumns={{ base: "minmax(0, 1fr)", md: "minmax(180px, 1fr) minmax(0, 3fr)" }} gap="6">
-        <Card.Root p="6" h="fit-content">
-          <Heading>Hello, {session.username || "there"}!</Heading>
-          <Text overflowWrap="anywhere">{profile.email}</Text>
-          <Text color="fg.muted">{session.group}</Text>
-          <Dialog.Root role="alertdialog">
-            <Dialog.Trigger asChild><Button mt="4" disabled={Boolean(saving)}>Log Out</Button></Dialog.Trigger>
-            <Portal>
-              <Dialog.Backdrop /><Dialog.Positioner>
-                <Dialog.Content w="calc(100% - 2rem)">
-                  <Dialog.Header><Dialog.Title>Log out?</Dialog.Title></Dialog.Header>
-                  <Dialog.Body>You will return to the login screen.</Dialog.Body>
-                  <Dialog.Footer>
-                    <Dialog.ActionTrigger asChild><Button variant="outline">Cancel</Button></Dialog.ActionTrigger>
-                    <Button onClick={logout} disabled={Boolean(saving)} loading={saving === "logout"}>Log Out</Button>
-                  </Dialog.Footer>
-                  <Dialog.CloseTrigger asChild><CloseButton /></Dialog.CloseTrigger>
-                </Dialog.Content>
-              </Dialog.Positioner>
-            </Portal>
-          </Dialog.Root>
-        </Card.Root>
-        <Card.Root p={{ base: "4", md: "6" }} minW="0">
-          {(!session.ready || resource.loading) && <Box role="status"><Spinner size="sm" mr="2" />Loading profile…</Box>}
-          {session.ready && session.accessToken && !session.id && <Text role="alert">Your profile ID is unavailable. Log out and sign in again.</Text>}
-          {resource.error && <Stack><Text role="alert" color="red.600">{resource.error}</Text><Button onClick={resource.refresh}>Retry profile</Button></Stack>}
-          {saveError && <Text role="alert" color="red.600" mb="4">{saveError}</Text>}
-          <Tabs.Root defaultValue="info">
-            <Tabs.List flexWrap="wrap"><Tabs.Trigger value="info">Personal Info</Tabs.Trigger><Tabs.Trigger value="security">Password &amp; Security</Tabs.Trigger></Tabs.List>
-            <Tabs.Content value="info">
-              <Stack as="form" onSubmit={(event) => submit(event, "profile")} gap="4">
-                {["first_name", "last_name", "email"].map((field) => (
-                  <Field.Root key={field}>
-                    <Field.Label>{field === "first_name" ? "First Name" : field === "last_name" ? "Last Name" : "Email"}</Field.Label>
-                    <Input type={field === "email" ? "email" : "text"} value={profile[field] || ""}
-                      disabled={!ready || Boolean(saving)} onChange={(event) => edit(field, event.target.value)}
-                      autoComplete={field === "first_name" ? "given-name" : field === "last_name" ? "family-name" : "email"} />
-                  </Field.Root>
-                ))}
-                <Button type="submit" disabled={!ready || Boolean(saving)} loading={saving === "profile"} loadingText="Saving…">Save Changes</Button>
-              </Stack>
-            </Tabs.Content>
-            <Tabs.Content value="security">
-              <Stack as="form" onSubmit={(event) => submit(event, "password")} gap="4">
-                {["current", "next", "confirm"].map((field) => (
-                  <Field.Root key={field} required>
-                    <Field.Label>{field === "current" ? "Current Password" : field === "next" ? "New Password" : "Confirm New Password"}</Field.Label>
-                    <PasswordInput required disabled={!ready || Boolean(saving)} value={passwords[field]}
-                      autoComplete={field === "current" ? "current-password" : "new-password"}
-                      onChange={(event) => setPasswords((previous) => ({ ...previous, [field]: event.target.value }))} />
-                  </Field.Root>
-                ))}
-                <Button type="submit" disabled={!ready || Boolean(saving)} loading={saving === "password"} loadingText="Saving…">Change Password</Button>
-              </Stack>
-            </Tabs.Content>
-          </Tabs.Root>
-        </Card.Root>
-      </Grid>
+      <Tabs.Root defaultValue="info" orientation="vertical" variant="subtle">
+        <Grid w="full" templateColumns={{ base: "minmax(0, 1fr)", lg: "repeat(4, minmax(0, 1fr))" }} gap="30px" p={{ base: "15px", md: "30px" }}>
+          <GridItem colSpan={1}>
+            <Card.Root w="100%" p="30px" alignItems="center" gap="2px" flexDirection="column">
+              <Box borderRadius="70px" bg="blue.700" w="120px" p="30px" marginBottom="8px">
+                <CgUserlane size="60px" color="white" />
+              </Box>
+              <Heading>Hello, {session.username || "there"}!</Heading>
+              <Text fontSize="md" color="fg.muted" overflowWrap="anywhere" maxW="full">{profile.email}</Text>
+              <Text fontSize="sm" color="fg.muted">{session.group}</Text>
+              <Dialog.Root role="alertdialog">
+                <Dialog.Trigger asChild>
+                  <Button variant="outline" bg="blue.700" color="white" mt="10px" width="180px" maxW="full" disabled={Boolean(saving)}>Log Out</Button>
+                </Dialog.Trigger>
+                <Portal>
+                  <Dialog.Backdrop /><Dialog.Positioner>
+                    <Dialog.Content w="calc(100% - 2rem)">
+                      <Dialog.Header><Dialog.Title>Are you sure?</Dialog.Title></Dialog.Header>
+                      <Dialog.Body>You will be logged out. Are you sure?</Dialog.Body>
+                      <Dialog.Footer>
+                        <Dialog.ActionTrigger asChild><Button variant="outline">Cancel</Button></Dialog.ActionTrigger>
+                        <Button variant="outline" bg="blue.700" color="white" onClick={logout} disabled={Boolean(saving)} loading={saving === "logout"}>Log Out</Button>
+                      </Dialog.Footer>
+                      <Dialog.CloseTrigger asChild><CloseButton size="sm" /></Dialog.CloseTrigger>
+                    </Dialog.Content>
+                  </Dialog.Positioner>
+                </Portal>
+              </Dialog.Root>
+              <Box borderTopWidth="1px" width="100%" marginTop="40px" paddingTop="20px">
+                <Tabs.List width="100%">
+                  <Tabs.Trigger value="info" width="100%">Personal Info</Tabs.Trigger>
+                  <Tabs.Trigger value="security" width="100%">Password &amp; Security</Tabs.Trigger>
+                </Tabs.List>
+              </Box>
+            </Card.Root>
+          </GridItem>
+          <GridItem colSpan={{ base: 1, lg: 3 }} minW="0">
+            <Card.Root p="30px">
+              {(!session.ready || resource.loading) && <Box role="status"><Spinner size="sm" mr="2" />Loading profile…</Box>}
+              {session.ready && session.accessToken && !session.id && <Text role="alert">Your profile ID is unavailable. Log out and sign in again.</Text>}
+              {resource.error && <Stack><Text role="alert" color="red.600">{resource.error}</Text><Button variant="outline" onClick={resource.refresh}>Retry profile</Button></Stack>}
+              {saveError && <Text role="alert" color="red.600" mb="4">{saveError}</Text>}
+              <Tabs.Content value="info">
+                <Heading size="2xl">Personal Info</Heading>
+                <Box as="form" onSubmit={(event) => submit(event, "profile")} mt="20px" display="flex" flexDirection="column" gap="20px">
+                  {[
+                    ["first_name", "First Name", "Enter your first name", "given-name"],
+                    ["last_name", "Last Name", "Enter your last name", "family-name"],
+                    ["email", "Email", "Your email", "email"],
+                  ].map(([field, label, placeholder, autoComplete]) => (
+                    <Field.Root key={field} gap="0">
+                      <Field.Label fontWeight="bold" mb="4px">{label}</Field.Label>
+                      <Input type={field === "email" ? "email" : "text"} placeholder={placeholder} value={profile[field] || ""}
+                        disabled={!ready || Boolean(saving)} onChange={(event) => edit(field, event.target.value)} autoComplete={autoComplete} />
+                    </Field.Root>
+                  ))}
+                  <Button type="submit" variant="outline" bg="blue.700" color="white" mt="10px" width="150px" disabled={!ready || Boolean(saving)} loading={saving === "profile"} loadingText="Saving…">Save Changes</Button>
+                </Box>
+              </Tabs.Content>
+              <Tabs.Content value="security">
+                <Heading size="2xl">Password &amp; Security</Heading>
+                <Box as="form" onSubmit={(event) => submit(event, "password")} mt="20px" display="flex" flexDirection="column" gap="20px">
+                  {[
+                    ["current", "Current Password", "Enter current password"],
+                    ["next", "New Password", "Enter new password"],
+                    ["confirm", "Confirm New Password", "Re-enter new password"],
+                  ].map(([field, label, placeholder]) => (
+                    <Field.Root key={field} gap="0">
+                      <Field.Label fontWeight="bold" mb="4px">{label}</Field.Label>
+                      <PasswordInput required placeholder={placeholder} disabled={!ready || Boolean(saving)} value={passwords[field]}
+                        autoComplete={field === "current" ? "current-password" : "new-password"}
+                        onChange={(event) => setPasswords((previous) => ({ ...previous, [field]: event.target.value }))} />
+                    </Field.Root>
+                  ))}
+                  <Button type="submit" variant="outline" bg="blue.700" color="white" mt="10px" width="180px" disabled={!ready || Boolean(saving)} loading={saving === "password"} loadingText="Saving…">Update Password</Button>
+                </Box>
+              </Tabs.Content>
+            </Card.Root>
+          </GridItem>
+        </Grid>
+      </Tabs.Root>
     </Container>
   );
 }

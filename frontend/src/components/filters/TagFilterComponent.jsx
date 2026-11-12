@@ -1,22 +1,34 @@
 "use client";
 
-import { Button, Flex, NativeSelect, Text } from "@chakra-ui/react";
+import { Button, Flex, Menu, Portal, Text } from "@chakra-ui/react";
+import { IoPricetagsSharp } from "react-icons/io5";
 import useTags from "@/hooks/useTags";
 
 export default function TagFilterComponent({ value = "", onChange }) {
   const { tags, loading, error, refresh } = useTags();
   return (
     <Flex gap="2" align="center" wrap="wrap">
-      <NativeSelect.Root size="sm" w="auto" minW="150px">
-        <NativeSelect.Field aria-label="Filter by tag" value={value} disabled={loading}
-          onChange={(event) => onChange(event.target.value)}>
-          <option value="">All tags</option>
-          {value && !tags.some((tag) => tag.id === value) && <option value={value}>Selected tag</option>}
-          {tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.title}</option>)}
-        </NativeSelect.Field>
-        <NativeSelect.Indicator />
-      </NativeSelect.Root>
-      {error && <><Text role="alert" fontSize="sm">{error}</Text><Button size="xs" onClick={refresh}>Retry tags</Button></>}
+      <Menu.Root>
+        <Menu.Trigger asChild>
+          <Button variant="outline" size="sm" disabled={loading}><IoPricetagsSharp /> Tags</Button>
+        </Menu.Trigger>
+        <Portal>
+          <Menu.Positioner>
+            <Menu.Content minW="10rem" aria-label="Filter by tag">
+              <Menu.RadioItemGroup value={value} onValueChange={({ value }) => onChange(value)}>
+                <Menu.RadioItem value="">All tags<Menu.ItemIndicator /></Menu.RadioItem>
+                {value && !tags.some((tag) => String(tag.id) === value) && (
+                  <Menu.RadioItem value={value}>Selected tag<Menu.ItemIndicator /></Menu.RadioItem>
+                )}
+                {tags.map((tag) => (
+                  <Menu.RadioItem key={tag.id} value={String(tag.id)}>{tag.title}<Menu.ItemIndicator /></Menu.RadioItem>
+                ))}
+              </Menu.RadioItemGroup>
+            </Menu.Content>
+          </Menu.Positioner>
+        </Portal>
+      </Menu.Root>
+      {error && <><Text role="alert" fontSize="sm">{error}</Text><Button size="xs" variant="outline" onClick={refresh}>Retry tags</Button></>}
     </Flex>
   );
 }

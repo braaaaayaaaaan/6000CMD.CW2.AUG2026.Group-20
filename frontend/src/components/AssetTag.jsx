@@ -1,22 +1,27 @@
-import { Button, Flex, Spinner, Text } from "@chakra-ui/react";
+import { Button, Flex, Spinner, Tag, Text } from "@chakra-ui/react";
+import { HiPlus } from "react-icons/hi";
 
 export default function AssetTag({ tags, loading, error, selectedTags, onSelectTag, disabled = false, onRetry }) {
-  if (loading) return <Spinner size="sm" aria-label="Loading tags" />;
+  if (loading) return <Spinner size="lg" color="purple.500" aria-label="Loading tags" />;
   if (error) return (
     <Flex gap="2" align="center" wrap="wrap">
       <Text role="alert">{error}</Text>
-      {onRetry && <Button type="button" size="xs" onClick={onRetry}>Retry tags</Button>}
+      {onRetry && <Button type="button" size="xs" variant="outline" onClick={onRetry}>Retry tags</Button>}
     </Flex>
   );
   return (
     <Flex gap="2" wrap="wrap">
       {tags.length ? tags.map((tag) => (
-        <Button type="button" key={tag.id} size="sm" aria-pressed={selectedTags.includes(tag.id)}
-          colorPalette="blue" variant={selectedTags.includes(tag.id) ? "solid" : "outline"}
+        <Tag.Root as="button" type="button" key={tag.id} size="lg" aria-pressed={selectedTags.includes(tag.id)}
+          bg={selectedTags.includes(tag.id) ? "blue.700" : "gray.100"}
+          color={selectedTags.includes(tag.id) ? "white" : "black"}
+          _hover={{ cursor: disabled ? "not-allowed" : "pointer", opacity: 0.8 }}
+          _disabled={{ opacity: 0.5 }}
           disabled={disabled} onClick={() => onSelectTag(tag.id)}>
-          {tag.title}
-        </Button>
-      )) : <Text>No tags available.</Text>}
+          {!selectedTags.includes(tag.id) && <HiPlus style={{ marginRight: 4 }} />}
+          <Tag.Label>{tag.title}</Tag.Label>
+        </Tag.Root>
+      )) : <Text>No tags found!</Text>}
     </Flex>
   );
 }

@@ -68,12 +68,16 @@ export default function AssetCard() {
   }
 
   return (
-    <Stack gap="5" mt="5">
-      <Flex gap="3" justify="space-between" wrap="wrap" align="center">
-        <BasicFilterComponent value={filter} onChange={setFilter} />
-        <TagFilterComponent value={tagFilter} onChange={setTagFilter} />
-        {editable && <Box ml={{ md: "auto" }}><UploadAssetModal onAssetUploaded={uploaded} /></Box>}
+    <Box>
+      <Flex gap="2" justify="space-between" wrap="wrap">
+        <Box height="10"><BasicFilterComponent value={filter} onChange={setFilter} /></Box>
+        <Box height="10"><TagFilterComponent value={tagFilter} onChange={setTagFilter} /></Box>
+        <Box height="10" width="50" ml="auto">
+          {editable && <UploadAssetModal onAssetUploaded={uploaded} />}
+        </Box>
       </Flex>
+      <br />
+      <br />
       {resource.loading && <Flex role="status" gap="2" align="center"><Spinner size="sm" />Loading assets…</Flex>}
       {resource.error && <Stack>
         <Text role="alert" color="red.600">{resource.error}</Text>
@@ -82,27 +86,33 @@ export default function AssetCard() {
       {!resource.loading && !resource.error && !assets.length && (
         <Text role="status">{search || tagFilter ? "No assets match your filters." : "No assets yet. Upload a file to get started."}</Text>
       )}
-      <Flex gap="6" wrap="wrap" align="stretch" aria-busy={resource.loading}>
+      <Flex gap={31} direction="row" wrap="wrap" aria-busy={resource.loading}>
         {assets.map((asset) => (
           <Card.Root key={asset.id} w={{ base: "full", sm: "320px" }} maxW="full" variant="elevated">
-            <Card.Body gap="3" minW="0">
-              <Box h="150px"><PreviewAssetMedia asset={asset} compact /></Box>
-              <Card.Title overflowWrap="anywhere">{asset.name}</Card.Title>
-              <Text fontSize="sm">{Number(asset.file_size).toFixed(2)} MB</Text>
-              <Card.Description overflowWrap="anywhere">{asset.description}</Card.Description>
-              <Text fontSize="sm" overflowWrap="anywhere"><b>Uploaded By:</b> {asset.uploaded_by}</Text>
-              <Text fontSize="sm" overflowWrap="anywhere"><b>Uploaded:</b> {formatDateTime(asset.upload_datetime)}</Text>
-              <Text fontSize="sm" overflowWrap="anywhere"><b>Tags:</b> {tagLabel(asset)}</Text>
+            <Card.Body gap="2" colorPalette="gray" minW="0">
+              <Stack>
+                <Box h="140px"><PreviewAssetMedia asset={asset} compact /></Box>
+                <Box>
+                  <Card.Title overflowWrap="anywhere">{asset.name}</Card.Title>
+                  <p>{Number(asset.file_size).toFixed(2)} MB</p>
+                  <Card.Description overflowWrap="anywhere">{asset.description}</Card.Description>
+                </Box>
+              </Stack>
+              <Flex direction="column">
+                <Card.Description overflowWrap="anywhere"><b>Uploaded By:</b> {asset.uploaded_by}</Card.Description>
+                <Card.Description overflowWrap="anywhere"><b>Datetime:</b> {formatDateTime(asset.upload_datetime)}</Card.Description>
+                <Card.Description overflowWrap="anywhere"><b>Tags: </b>{tagLabel(asset)}</Card.Description>
+              </Flex>
             </Card.Body>
-            <Card.Footer gap="2" flexWrap="wrap">
+            <Card.Footer justifyContent="flex-end" flexWrap="wrap">
               <PreviewAssetModal asset={asset} onAssetDeleted={deleted} onAssetUpdated={assetChanged} />
-              <Button variant="surface" size="sm" onClick={() => download(asset)}>Download</Button>
+              <Button variant="surface" onClick={() => download(asset)}>Download</Button>
               {editable && <EditAssetModal asset={asset} onAssetUpdated={assetChanged} />}
             </Card.Footer>
           </Card.Root>
         ))}
       </Flex>
       <ListPagination page={page} count={count} onPageChange={changePage} disabled={resource.loading} />
-    </Stack>
+    </Box>
   );
 }

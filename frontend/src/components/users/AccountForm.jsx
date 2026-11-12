@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, Center, Field, Heading, Image, Input, Link, Stack, Text } from "@chakra-ui/react";
+import { Box, Button, Center, Field, Fieldset, Heading, Image, Input, Link } from "@chakra-ui/react";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Logo from "@/assets/ManticAI_Logo.png";
@@ -55,31 +55,37 @@ export default function AccountForm({ signup = false }) {
   }
 
   return (
-    <Center minH="100svh" px="4" py="6">
-      <Box as="form" onSubmit={submit} w="full" maxW="lg" p={{ base: "5", md: "8" }} borderWidth="1px" rounded="lg" boxShadow="lg">
-        <Stack gap="5">
-          <Image src={Logo.src ?? Logo} alt="ManticAI" maxW="260px" w="full" mx="auto" />
-          <Heading textAlign="center" size={{ base: "xl", md: "2xl" }}>{signup ? "Sign Up" : "Digital Asset Management"}</Heading>
+    <Center minH="100vh" px={{ base: "4", md: "0" }} py={{ base: "6", md: "0" }}>
+      <Box as="form" onSubmit={submit} w="lg" maxW="full" p={signup ? "30px" : 10} borderWidth="1px" borderRadius="lg" boxShadow="lg" textAlign="center">
+        <Heading size="2xl" color="blue.700" fontWeight="bold" marginBottom="50px">
+          <Image src={Logo.src ?? Logo} alt="logo" />
+          {signup ? "Sign Up" : "Digital Asset Management System"}
+        </Heading>
+        <Fieldset.Root size="lg" invalid={Boolean(error)}>
+          <Fieldset.Content>
           {fields.map((field) => {
             const [label, type, autoComplete] = definitions[field];
             const Component = type === "password" ? PasswordInput : Input;
             return (
-              <Field.Root key={field} required>
+              <Field.Root key={field} mt={!signup && field === "password" ? 4 : undefined}>
                 <Field.Label>{label}</Field.Label>
-                <Component name={field} type={type} autoComplete={autoComplete} required disabled={saving}
+                <Component name={field} type={type} borderColor="gray.300" autoComplete={autoComplete} required disabled={saving}
                   minLength={signup && type === "password" ? 12 : undefined}
                   value={values[field] || ""} onChange={(event) => setValues((previous) => ({ ...previous, [field]: event.target.value }))} />
               </Field.Root>
             );
           })}
-          {error && <Text role="alert" color="red.600">{error}</Text>}
-          <Button type="submit" loading={saving} disabled={saving} loadingText={signup ? "Creating account…" : "Logging in…"}>
+          <Button type="submit" marginTop={signup ? "20px" : "30px"} variant="outline" bg="blue.700" color="white" loading={saving} disabled={saving} loadingText={signup ? "Creating account…" : "Logging in…"}>
             {signup ? "Sign Up" : "Login"}
           </Button>
-          <Link href={signup ? "/login" : "/signup"} alignSelf="center">
-            {signup ? "Already have an account? Log in" : "Create an account"}
-          </Link>
-        </Stack>
+          {error && <Fieldset.ErrorText role="alert" mt={signup ? 3 : undefined}>{error}</Fieldset.ErrorText>}
+          <Box fontSize="sm">
+            <Link variant="underline" href={signup ? "/login" : "/signup"}>
+              {signup ? "Already have an account? Log in!" : "Don’t have an account? Sign up!"}
+            </Link>
+          </Box>
+          </Fieldset.Content>
+        </Fieldset.Root>
       </Box>
     </Center>
   );

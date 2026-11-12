@@ -66,45 +66,48 @@ export default function TagManagement() {
   return (
     <EditorLayout>
       {editable ? <>
-      <Stack gap="4">
-        <Heading>Tag Management</Heading>
-        <Box alignSelf="end"><AddTag /></Box>
-        {loading && <Flex role="status" gap="2"><Spinner size="sm" />Loading tags…</Flex>}
-        {error && <Stack><Text role="alert">{error}</Text><Button alignSelf="start" onClick={refresh}>Retry tags</Button></Stack>}
-        {usage.error && <Stack><Text role="alert">Usage counts: {usage.error}</Text><Button alignSelf="start" onClick={usage.refresh}>Retry counts</Button></Stack>}
+      <Heading>Tag Management</Heading>
+      <Stack>
+        <Box display="flex" justifyContent="flex-end"><AddTag /></Box>
+        {usage.error && <Stack><Text role="alert">Usage counts: {usage.error}</Text><Button alignSelf="start" variant="outline" onClick={usage.refresh}>Retry counts</Button></Stack>}
         {actionError && !deleting && <Text role="alert" color="red.600">{actionError}</Text>}
         <Box overflowX="auto">
-          <Table.Root>
-            <Table.Header><Table.Row><Table.ColumnHeader>Tag Name</Table.ColumnHeader><Table.ColumnHeader>Usage Count</Table.ColumnHeader><Table.ColumnHeader>Actions</Table.ColumnHeader></Table.Row></Table.Header>
+          <Table.Root variant="line">
+            <Table.Header><Table.Row><Table.ColumnHeader>Tag Name</Table.ColumnHeader><Table.ColumnHeader textAlign="center">Usage Count</Table.ColumnHeader><Table.ColumnHeader textAlign="center">Actions</Table.ColumnHeader></Table.Row></Table.Header>
             <Table.Body>
-              {rows.map((tag) => (
+              {loading ? (
+                <Table.Row><Table.Cell colSpan={3} textAlign="center"><Spinner size="lg" color="purple.500" aria-label="Loading tags" /></Table.Cell></Table.Row>
+              ) : error ? (
+                <Table.Row><Table.Cell colSpan={3} textAlign="center" color="red.500">
+                  <Text role="alert">{error}</Text><Button size="xs" variant="outline" onClick={refresh}>Retry tags</Button>
+                </Table.Cell></Table.Row>
+              ) : rows.length ? rows.map((tag) => (
                 <Table.Row key={tag.id}>
                   <Table.Cell>
                     {editing?.id === tag.id
                       ? <Box as="form" id={"edit-tag-" + tag.id} onSubmit={save}>
-                          <Input aria-label="Tag name" required maxLength={50} value={editing.title} disabled={saving}
+                          <Input size="sm" width="auto" aria-label="Tag name" required maxLength={50} value={editing.title} disabled={saving}
                             onChange={(event) => setEditing({ id: tag.id, title: event.target.value })} />
                         </Box>
                       : tag.title}
                   </Table.Cell>
-                  <Table.Cell>{loading || usage.loading ? "Loading…" : error || usage.error ? "Unavailable" : (usage.data || []).find((item) => item.id === tag.id)?.usage_count ?? 0}</Table.Cell>
-                  <Table.Cell>
-                    <Flex gap="2" wrap="wrap">
+                  <Table.Cell textAlign="center">{loading || usage.loading ? "Loading…" : error || usage.error ? "Unavailable" : (usage.data || []).find((item) => item.id === tag.id)?.usage_count ?? 0}</Table.Cell>
+                  <Table.Cell textAlign="center">
+                    <Flex gap="10px" wrap="wrap" justify="center">
                       {editing?.id === tag.id ? <>
-                        <Button size="xs" type="submit" form={"edit-tag-" + tag.id} loading={saving} disabled={saving}>Save</Button>
-                        <Button size="xs" variant="outline" disabled={saving} onClick={() => { setEditing(null); setActionError(""); }}>Cancel</Button>
+                        <Button size="xs" bg="green.600" type="submit" form={"edit-tag-" + tag.id} loading={saving} disabled={saving}>Save</Button>
+                        <Button size="xs" bg="gray.400" disabled={saving} onClick={() => { setEditing(null); setActionError(""); }}>Cancel</Button>
                       </> : <>
-                        <Button size="xs" variant="outline" disabled={saving || loading} onClick={() => { setEditing({ id: tag.id, title: tag.title }); setActionError(""); }}>Edit</Button>
-                        <Button size="xs" colorPalette="red" variant="outline" disabled={saving || loading} onClick={() => { setDeleting(tag); setActionError(""); }}>Delete</Button>
+                        <Button size="xs" variant="surface" colorPalette="gray" disabled={saving || loading} onClick={() => { setEditing({ id: tag.id, title: tag.title }); setActionError(""); }}>Edit</Button>
+                        <Button size="xs" colorPalette="red" variant="surface" disabled={saving || loading} onClick={() => { setDeleting(tag); setActionError(""); }}>Delete</Button>
                       </>}
                     </Flex>
                   </Table.Cell>
                 </Table.Row>
-              ))}
+              )) : <Table.Row><Table.Cell colSpan={3} textAlign="center">No tags found!</Table.Cell></Table.Row>}
             </Table.Body>
           </Table.Root>
         </Box>
-        {!loading && !error && !tags.length && <Text>No tags yet. Create a tag to get started.</Text>}
         <ListPagination page={page} count={tags.length} onPageChange={setPage} disabled={saving || loading} />
         <Dialog.Root role="alertdialog" open={Boolean(deleting)} onOpenChange={({ open }) => {
           if (!open && !busy.current) { setDeleting(null); setActionError(""); }
@@ -118,9 +121,9 @@ export default function TagManagement() {
               </Dialog.Body>
               <Dialog.Footer>
                 <Dialog.ActionTrigger asChild><Button variant="outline" disabled={saving}>Cancel</Button></Dialog.ActionTrigger>
-                <Button colorPalette="red" onClick={remove} loading={saving} disabled={saving} loadingText="Deleting…">Delete</Button>
+                <Button variant="surface" colorPalette="red" onClick={remove} loading={saving} disabled={saving} loadingText="Deleting…">Delete</Button>
               </Dialog.Footer>
-              <Dialog.CloseTrigger asChild><CloseButton disabled={saving} /></Dialog.CloseTrigger>
+              <Dialog.CloseTrigger asChild><CloseButton size="sm" disabled={saving} /></Dialog.CloseTrigger>
             </Dialog.Content>
           </Dialog.Positioner></Portal>
         </Dialog.Root>
