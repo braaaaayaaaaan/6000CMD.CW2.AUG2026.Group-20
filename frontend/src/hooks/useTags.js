@@ -57,7 +57,7 @@ export default function useTags() {
       sessionId = session.id;
       publish({ ...initial, revision: snapshot.revision + 1 });
     }
-    if (session.accessToken) void loadTags();
-  }, [session.ready, session.id, session.accessToken]);
+    if (session.authenticated) void loadTags();
+  }, [session.ready, session.id, session.authenticated]);
   return { ...(session.id === sessionId ? value : initial), refresh: refreshTags };
 }

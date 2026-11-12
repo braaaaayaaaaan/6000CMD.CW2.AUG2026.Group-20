@@ -7,11 +7,12 @@ import {
   Input,
   InputGroup,
   Stack,
+  Text,
   mergeRefs,
   useControllableState,
 } from '@chakra-ui/react'
 import * as React from 'react'
-import { LuEye, LuEyeOff } from 'react-icons/lu'
+import { LuCheck, LuCircle, LuEye, LuEyeOff } from 'react-icons/lu'
 
 export const PasswordInput = React.forwardRef(
   function PasswordInput(props, ref) {
@@ -75,14 +76,16 @@ const VisibilityTrigger = React.forwardRef(
 
 export const PasswordStrengthMeter = React.forwardRef(
   function PasswordStrengthMeter(props, ref) {
-    const { max = 4, value, ...rest } = props
+    const { max = 4, value, label: customLabel, ...rest } = props
 
     const percent = (value / max) * 100
-    const { label, colorPalette } = getColorPalette(percent)
+    const { label: defaultLabel, colorPalette } = getColorPalette(percent)
+    const label = customLabel ?? defaultLabel
 
     return (
-      <Stack align='flex-end' gap='1' ref={ref} {...rest}>
-        <HStack width='full' {...rest}>
+      <Stack align='flex-end' gap='1' ref={ref} role='meter' aria-label='Estimated password strength'
+        aria-valuemin={0} aria-valuemax={max} aria-valuenow={value} aria-valuetext={label} {...rest}>
+        <HStack width='full'>
           {Array.from({ length: max }).map((_, index) => (
             <Box
               key={index}
@@ -104,6 +107,95 @@ export const PasswordStrengthMeter = React.forwardRef(
     )
   },
 )
+
+export function PasswordStrengthFeedback({ id, password = '', confirmation = '', minLength = 12, compact = false }) {
+  const characters = Array.from(password)
+  const lengthMet = characters.length >= minLength
+  const decimalOnly = /^\p{Decimal_Number}+$/u.test(password)
+  const hasNonNumber = /\P{Number}/u.test(password)
+  const uniqueCharacters = new Set(characters.map((character) => character.toLowerCase())).size
+  const predictable = /(.)\1{3,}|1234|2345|3456|4567|5678|6789|abcd|qwerty|asdf|password|letmein|welcome/iu.test(password)
+  const variety = [/\p{Lowercase_Letter}/u, /\p{Uppercase_Letter}/u, /\p{Decimal_Number}/u, /[^\p{Letter}\p{Number}\s]/u]
+    .filter((pattern) => pattern.test(password)).length
+
+  let strength = 0
+  if (password) {
+    strength = 1
+    if (lengthMet && uniqueCharacters >= 5) strength = 2
+    if (lengthMet && uniqueCharacters >= 8 && (characters.length >= 16 || variety >= 3)) strength = 3
+    if (uniqueCharacters >= 10 && (characters.length >= 20 || (characters.length >= 16 && variety >= 3))) strength = 4
+    if (!lengthMet || decimalOnly || predictable) strength = 1
+  }
+
+  const suggestions = []
+  if (characters.length < 16) suggestions.push('try 16 or more characters')
+  if (!/\p{Decimal_Number}/u.test(password)) suggestions.push('add a number')
+  if (!/[^\p{Letter}\p{Number}\s]/u.test(password)) suggestions.push('add a symbol')
+  if (predictable) suggestions.push('avoid repeated or predictable patterns')
+
+  let nonNumericMet = null
+  if (hasNonNumber) nonNumericMet = true
+  if (decimalOnly) nonNumericMet = false
+  const requirements = [
+    { id: 'length', label: `At least ${minLength} characters (${characters.length}/${minLength})`, met: password ? lengthMet : null },
+    { id: 'non-numeric', label: 'Must not be entirely numeric', met: nonNumericMet },
+    { id: 'confirmation', label: 'Passwords match', met: confirmation ? password === confirmation : null },
+  ]
+  const strengthLabel = password ? ['Weak', 'Fair', 'Good', 'Strong'][strength - 1] : 'Not Entered'
+
+  if (compact) {
+    const hints = []
+    if (!password) hints.push(`Use at least ${minLength} characters. Avoid common passwords and personal details.`)
+    if (password && !lengthMet) hints.push(`Add ${minLength - characters.length} more characters.`)
+    if (decimalOnly) hints.push('Include a letter or symbol.')
+    if (confirmation && password !== confirmation) hints.push('Passwords do not match yet.')
+    if (password && predictable) hints.push('Try a less predictable password.')
+
+    return (
+      <Stack id={id} as='section' aria-label='Password requirements' w='full' gap='2' textAlign='left'>
+        {password && <PasswordStrengthMeter value={strength} label={strengthLabel} w='full' />}
+        {hints.length > 0 && <Text fontSize='xs' color='fg.muted' aria-live='polite'>{hints.join(' ')}</Text>}
+      </Stack>
+    )
+  }
+
+  return (
+    <Stack id={id} as='section' aria-label='Password requirements' w='full' gap='3'
+      textAlign='left' bg='blue.50' color='gray.700' borderWidth='1px' borderColor='blue.100'
+      borderRadius='md' p='4'>
+      <HStack justify='space-between' gap='2' flexWrap='wrap'>
+        <Text fontSize='sm' fontWeight='semibold' color='blue.700'>Password Requirements</Text>
+        <Text fontSize='xs' fontWeight='medium' aria-live='polite'>
+          Estimated Strength · {strengthLabel}
+        </Text>
+      </HStack>
+      <PasswordStrengthMeter w='full' value={strength} label='' aria-valuetext={strengthLabel} />
+      <Stack as='ul' gap='2' listStyleType='none' m='0' p='0'>
+        {requirements.map(({ id: requirementId, label, met }) => {
+          const Icon = met === true ? LuCheck : LuCircle
+          const color = met === false ? 'red.600' : met === true ? 'green.700' : 'gray.600'
+          const status = met === true ? 'Met' : met === false ? 'Not met' : 'Pending'
+          return (
+            <HStack as='li' key={requirementId} gap='2' align='start' color={color} fontSize='xs'>
+              <Box as='span' pt='0.5' flexShrink='0'><Icon aria-hidden='true' /></Box>
+              <Text>{label}<Box as='span' srOnly> — {status}</Box></Text>
+            </HStack>
+          )
+        })}
+      </Stack>
+      <Box borderTopWidth='1px' borderColor='blue.100' pt='2'>
+        <Text fontSize='xs' fontWeight='medium' mb='1'>Also checked when saved</Text>
+        <Text fontSize='xs' color='gray.600'>Avoid common passwords and passwords similar to your name, username or email.</Text>
+      </Box>
+      {password && strength < 4 && suggestions.length > 0 && (
+        <Box>
+          <Text fontSize='xs' fontWeight='medium'>Strength tips (optional)</Text>
+          <Text fontSize='xs' color='gray.600'>{suggestions.join(' · ')}</Text>
+        </Box>
+      )}
+    </Stack>
+  )
+}
 
 function getColorPalette(percent) {
   switch (true) {

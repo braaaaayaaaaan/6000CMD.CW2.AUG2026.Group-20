@@ -20,8 +20,8 @@ export default function NavBar({ items = [] }) {
         </Link>
         <SearchBar />
         <Button asChild size="sm" bg="blue.700" color="white" maxW={{ base: "160px", md: "240px" }}>
-          <Link href={session.accessToken ? "/user-profile" : "/login"} title={session.username || "Log in"}>
-            {session.accessToken ? <><LuUserRound /><Text as="span" truncate>{session.username}</Text></> : "Log In"}
+          <Link href={session.authenticated ? "/user-profile" : "/login"} title={session.username || "Log in"}>
+            {session.authenticated ? <><LuUserRound /><Text as="span" truncate>{session.username}</Text></> : "Log In"}
           </Link>
         </Button>
       </Flex>

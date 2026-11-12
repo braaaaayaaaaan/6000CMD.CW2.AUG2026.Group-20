@@ -2,32 +2,34 @@
 
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "@/utils/api";
+import useBrowserSession from "./useBrowserSession";
 
-export default function useApiResource(path, { enabled = true, accessToken = null, refreshKey = "" } = {}) {
+export default function useApiResource(path, { enabled = true, refreshKey = "" } = {}) {
+  const session = useBrowserSession();
+  const identity = session.id + ":" + session.group;
   const [revision, setRevision] = useState(0);
   const [result, setResult] = useState({ key: null, data: null, error: null, status: null });
-  const key = enabled && path ? JSON.stringify([path, accessToken, refreshKey, revision]) : null;
+  const key = enabled && session.authenticated && path ? JSON.stringify([path, identity, refreshKey, revision]) : null;
 
   useEffect(() => {
     if (!key) return;
     const controller = new AbortController();
     api.get(path, {
       signal: controller.signal,
-      headers: accessToken ? { Authorization: "Bearer " + accessToken } : undefined,
     }).then(({ data }) => {
-      if (!controller.signal.aborted) setResult({ key, path, accessToken, data, error: null, status: null });
+      if (!controller.signal.aborted) setResult({ key, path, identity, data, error: null, status: null });
     }).catch((error) => {
       if (!controller.signal.aborted) {
         setResult((previous) => ({
-          key, path, accessToken,
-          data: previous.path === path && previous.accessToken === accessToken ? previous.data : null,
+          key, path, identity,
+          data: previous.path === path && previous.identity === identity ? previous.data : null,
           error: errorMessage(error),
           status: error.response?.status,
         }));
       }
     });
     return () => controller.abort();
-  }, [path, accessToken, key]);
+  }, [path, identity, key]);
 
   function refresh() { setRevision((previous) => previous + 1); }
   function mutate(update) {
@@ -36,7 +38,7 @@ export default function useApiResource(path, { enabled = true, accessToken = nul
     }));
   }
   const current = Boolean(key && result.key === key);
-  const sameResource = Boolean(key && result.path === path && result.accessToken === accessToken);
+  const sameResource = Boolean(key && result.path === path && result.identity === identity);
   return {
     data: sameResource ? result.data : null,
     loading: Boolean(key && !current),

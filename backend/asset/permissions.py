@@ -1,4 +1,5 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
+from user.permissions import application_role
 
 
 class AssetPermission(BasePermission):
@@ -9,7 +10,6 @@ class AssetPermission(BasePermission):
         return bool(
             user and user.is_authenticated and (
                 request.method in SAFE_METHODS
-                or user.is_staff or user.is_superuser
-                or user.groups.filter(name="Editor").exists()
+                or application_role(user) in {"Editor", "Admin"}
             )
         )

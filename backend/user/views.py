@@ -1,21 +1,14 @@
-from django.contrib.auth import logout
-from django.contrib.auth.models import Group
-from django.contrib import admin
+﻿from django.contrib.auth.models import Group
 from django.db import transaction
-from django.db.models import F
-from django.http import HttpResponse
-from django.views.decorators.cache import never_cache
-from types import SimpleNamespace
-import math
-from rest_framework import permissions, viewsets
-from rest_framework.decorators import api_view
+from rest_framework import permissions, serializers, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from .authentication import RevocableTokenRefreshSerializer
 from .models import User
-from .serializers import UserSerializer, GroupSerializer, NewTokenObtainPairSerializer
+from .permissions import IsApplicationAdmin, application_role
+from .security import event
+from .serializers import UserSerializer, GroupSerializer
 
 
 class IsAdminOrSelf(permissions.BasePermission):
@@ -23,7 +16,7 @@ class IsAdminOrSelf(permissions.BasePermission):
         return bool(request.user and request.user.is_authenticated)
 
     def has_object_permission(self, request, view, obj):
-        return request.user.is_staff or request.user.is_superuser or obj == request.user
+        return application_role(request.user) == "Admin" or obj == request.user
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -33,9 +26,20 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == "create":
             return [permissions.AllowAny()]
-        if self.action == "list":
-            return [permissions.IsAdminUser()]
+        if self.action in {"list", "role", "status"}:
+            return [IsApplicationAdmin()]
         return [IsAdminOrSelf()]
+
+    def get_authenticators(self):
+        # Signup does not depend on a stale cookie from a previous browser login.
+        if self.request.method == "POST" and self.request.path_info.rstrip("/") == "/users":
+            return []
+        return super().get_authenticators()
+
+    def create(self, request, *args, **kwargs):
+        from rest_framework.authentication import SessionAuthentication
+        SessionAuthentication().enforce_csrf(request)
+        return super().create(request, *args, **kwargs)
 
     def get_throttles(self):
         throttles = super().get_throttles()
@@ -46,45 +50,37 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        return queryset.select_for_update() if self.action in {"update", "partial_update"} else queryset
+        return queryset.select_for_update() if self.action in {"update", "partial_update", "role", "status"} else queryset
 
     @transaction.atomic
     def update(self, request, *args, **kwargs):
         kwargs["partial"] = True
         return super().update(request, *args, **kwargs)
 
+    @action(detail=True, methods=["patch"])
+    @transaction.atomic
+    def role(self, request, pk=None):
+        user = self.get_object()
+        value = serializers.ChoiceField(choices=["Viewer", "Editor", "Admin"]).run_validation(request.data.get("role"))
+        group = Group.objects.get(name=value)
+        # Retain unrelated Django groups/model permissions; replace application roles.
+        user.groups.remove(*user.groups.filter(name__in=["Viewer", "Editor", "Admin"]))
+        user.groups.add(group)
+        event("role_changed", request.user, target=user)
+        return Response({"id": str(user.pk), "role": value})
 
-class GroupViewSet(viewsets.ModelViewSet):
+    @action(detail=True, methods=["patch"])
+    @transaction.atomic
+    def status(self, request, pk=None):
+        user = self.get_object()
+        user.is_active = serializers.BooleanField().run_validation(request.data.get("is_active"))
+        user.save(update_fields=["is_active"])
+        event("account_status_changed", request.user, target=user)
+        return Response({"id": str(user.pk), "is_active": user.is_active})
+
+
+class GroupViewSet(viewsets.ReadOnlyModelViewSet):
+    # Django Admin remains the place to manage model permissions and group names.
     queryset = Group.objects.order_by("name", "id")
     serializer_class = GroupSerializer
-    permission_classes = [permissions.IsAdminUser]
-
-
-class NewTokenObtainPairView(TokenObtainPairView):
-    serializer_class = NewTokenObtainPairSerializer
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "login"
-
-
-class NewTokenRefreshView(TokenRefreshView):
-    serializer_class = RevocableTokenRefreshSerializer
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "refresh"
-
-
-@api_view(["POST"])
-def end_session(request):
-    request._request.audit_actor = str(request.user.pk)
-    User.objects.filter(pk=request.user.pk).update(token_version=F("token_version") + 1)
-    logout(request._request)
-    return Response(status=204)
-
-
-@never_cache
-def admin_login(request, extra_context=None):
-    if request.method == "POST":
-        throttle = ScopedRateThrottle()
-        if not throttle.allow_request(request, SimpleNamespace(throttle_scope="login")):
-            return HttpResponse("Too many login attempts. Please try again later.", status=429,
-                                headers={"Retry-After": str(math.ceil(throttle.wait()))})
-    return admin.site.login(request, extra_context=extra_context)
+    permission_classes = [IsApplicationAdmin]

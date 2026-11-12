@@ -1,40 +1,22 @@
-"use client";
+﻿"use client";
 
-import { useMemo, useSyncExternalStore } from "react";
-
-const eventName = "dam-session-change";
-const emptySession = { accessToken: null, username: "", id: "", group: "" };
-const getServerSnapshot = () => null;
-
-function getSnapshot() {
-  try {
-    return JSON.stringify({
-      accessToken: localStorage.getItem("accessToken"),
-      username: localStorage.getItem("username") || "",
-      id: localStorage.getItem("id") || "",
-      group: localStorage.getItem("group") || "",
-    });
-  } catch {
-    return JSON.stringify(emptySession);
-  }
-}
-
-function subscribe(listener) {
-  window.addEventListener("storage", listener);
-  window.addEventListener(eventName, listener);
-  return () => {
-    window.removeEventListener("storage", listener);
-    window.removeEventListener(eventName, listener);
-  };
-}
-
-export function notifySessionChange() {
-  window.dispatchEvent(new Event(eventName));
-}
+import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { restoreSession } from "@/utils/api";
+import { getSessionSnapshot, getServerSnapshot, subscribeSession } from "@/utils/session";
 
 export default function useBrowserSession() {
-  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const snapshot = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSnapshot);
+  useEffect(() => {
+    void restoreSession();
+    const refresh = () => { void restoreSession(true); };
+    window.addEventListener("dam-auth-refresh", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("dam-auth-refresh", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
   return useMemo(() => snapshot === null
-    ? { ...emptySession, ready: false }
-    : { ...JSON.parse(snapshot), ready: true }, [snapshot]);
+    ? { ready: false, authenticated: false, username: "", id: "", group: "" }
+    : JSON.parse(snapshot), [snapshot]);
 }

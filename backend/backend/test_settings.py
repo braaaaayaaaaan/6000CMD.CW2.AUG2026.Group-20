@@ -15,6 +15,11 @@ with patch.dict(os.environ, {
     "CSRF_TRUSTED_ORIGINS": "",
     "MEDIA_FRAME_ALLOWED_ORIGINS": "",
     "JWT_ACCESS_TOKEN_MINUTES": "40",
+    "AUTH_COOKIE_SECURE": "true",
+    "AUTH_COOKIE_SAMESITE": "Lax",
+    "AUTH_NUM_PROXIES": "0",
+    "ACCOUNT_FRONTEND_URL": "http://127.0.0.1:3000",
+    "EMAIL_BACKEND": "django.core.mail.backends.locmem.EmailBackend",
     "DJANGO_MEDIA_ROOT": "media",
     "DJANGO_STATIC_ROOT": "staticfiles",
     "DB_NAME": "unused",
@@ -30,3 +35,13 @@ with patch.dict(os.environ, {
 DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 SECURE_SSL_REDIRECT = False
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+ACCOUNT_EMAIL_ASYNC = False
+MFA_ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="  # Test-only key.
+AUTH_COOKIE_SECURE = True
+ACCOUNT_ALLOWED_EMAIL_DOMAINS = []
+MFA_REQUIRED_ROLES = ["Viewer", "Editor", "Admin"]
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+LOGGING = {"version": 1, "disable_existing_loggers": False,
+           "handlers": {"null": {"class": "logging.NullHandler"}},
+           "loggers": {"dam.audit": {"handlers": ["null"], "level": "INFO", "propagate": False}}}

@@ -20,6 +20,7 @@ class SignupGroupTests(TestCase):
     def signup(self, **overrides):
         data = {
             "username": "new-viewer",
+            "email": "new-viewer@example.com",
             "password1": "Example!LongPassword-4792",
             "password2": "Example!LongPassword-4792",
         }
@@ -42,7 +43,7 @@ class SignupGroupTests(TestCase):
 
 class RequiredGroupTests(TestCase):
     def test_required_groups_are_seeded_by_migrations(self):
-        self.assertEqual(set(Group.objects.values_list("name", flat=True)), {"Viewer", "Editor"})
+        self.assertEqual(set(Group.objects.values_list("name", flat=True)), {"Viewer", "Editor", "Admin"})
 
     def test_bootstrap_is_repeatable_and_preserves_memberships_and_permissions(self):
         viewer = Group.objects.get(name="Viewer")
