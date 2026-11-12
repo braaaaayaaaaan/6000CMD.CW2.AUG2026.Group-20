@@ -1,25 +1,43 @@
 import logging
-import struct
 import hashlib
+import os
+import struct
 import json
 import uuid
 import warnings
-from pathlib import PurePosixPath
 from contextlib import contextmanager
+from datetime import timedelta
+from pathlib import Path, PurePosixPath
 
 from django.conf import settings
+from django.core.exceptions import SuspiciousFileOperation
+from django.core.files import File
+from django.core.files.storage import FileSystemStorage
 from django.core.files.uploadhandler import FileUploadHandler, StopUpload
-from django.db import transaction
+from django.db import connection, transaction
+from django.db.models import F, Q
 from django.db.models.signals import post_delete, pre_save
 from django.dispatch import receiver
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser
 from PIL import Image, UnidentifiedImageError
 
-from .models import Asset
+from .models import (
+    Asset,
+    AssetSeries,
+    QUARANTINE_KEY_PATTERN,
+    is_approved_key,
+    is_quarantine_key,
+)
 
 logger = logging.getLogger("dam.audit")
-MIME_TYPES = {"png": "image/png", "jpg": "image/jpeg", "mp4": "video/mp4", "glb": "model/gltf-binary"}
+MIME_TYPES = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "mp4": "video/mp4",
+    "glb": "model/gltf-binary",
+}
 
 
 def detect_type(file):
@@ -33,18 +51,37 @@ def detect_type(file):
         return "png"
     if header.startswith(b"\xff\xd8\xff"):
         return "jpg"
-    if len(header) >= 12 and header[:4] == b"glTF" and struct.unpack("<I", header[4:8])[0] == 2:
+    if (
+        len(header) >= 12
+        and header[:4] == b"glTF"
+        and struct.unpack("<I", header[4:8])[0] == 2
+    ):
         return "glb"
-    if len(header) >= 12 and header[4:8] == b"ftyp" and header[8:12] in {
-        b"isom", b"iso2", b"mp41", b"mp42", b"avc1", b"M4V ", b"dash", b"MSNV",
-    }:
+    if (
+        len(header) >= 12
+        and header[4:8] == b"ftyp"
+        and header[8:12]
+        in {
+            b"isom",
+            b"iso2",
+            b"mp41",
+            b"mp42",
+            b"avc1",
+            b"M4V ",
+            b"dash",
+            b"MSNV",
+        }
+    ):
         return "mp4"
     return None
 
 
 def validate_file(file):
     if not file.size or file.size > settings.ASSET_UPLOAD_MAX_BYTES:
-        raise ValidationError("Choose a nonempty file up to %s MB." % (settings.ASSET_UPLOAD_MAX_BYTES // (1024 * 1024)))
+        raise ValidationError(
+            "Choose a nonempty file up to %s MB."
+            % (settings.ASSET_UPLOAD_MAX_BYTES // (1024 * 1024))
+        )
     kind = detect_type(file)
     if kind is None:
         raise ValidationError("Only valid JPG, PNG, MP4, and GLB files are supported.")
@@ -223,11 +260,12 @@ class AssetMultiPartParser(MultiPartParser):
 
 
 def delete_unreferenced(name, storage):
-    if not name or Asset.objects.filter(url=name).exists():
-        return
     try:
-        storage.delete(name)
-    except OSError:
+        if name and not Asset.objects.filter(url=name).exists():
+            storage.delete(name)
+    except Exception:
+        # A storage/database outage must not hide the original upload failure.
+        # The existing orphan cleanup command can retry this later.
         logger.exception("asset_file_cleanup_failed", extra={"asset_file": name})
 
 
@@ -237,11 +275,13 @@ def staged_file(serializer):
     field = Asset._meta.get_field("url")
     uploaded = serializer.validated_data.get("url")
     name = None
-    if uploaded is not None:
-        name = field.storage.save("uploads/" + uuid.uuid4().hex + PurePosixPath(uploaded.name).suffix.lower(), uploaded, max_length=field.max_length)
-        serializer.validated_data["url"] = name
     try:
-        if name:
+        if uploaded is not None:
+            instance = serializer.instance or Asset()
+            # Generate the private name before saving so partial writes can be removed.
+            name = field.generate_filename(instance, uploaded.name)
+            name = field.storage.save(name, uploaded, max_length=field.max_length)
+            serializer.validated_data["url"] = name
             with field.storage.open(name, "rb") as stored:
                 if file_digest(stored) != serializer.validated_data["sha256"]:
                     raise ValidationError("The stored upload failed its integrity check. Try again.")
@@ -250,6 +290,405 @@ def staged_file(serializer):
         if name:
             delete_unreferenced(name, field.storage)
         raise
+
+
+MAX_PROCESSING_ATTEMPTS = 3
+PROCESSING_LEASE = timedelta(minutes=15)
+
+
+def check_asset_security(asset):
+    """Items 4–6 must validate the file type before this can return True."""
+    raise NotImplementedError("Required file-type validation is not implemented.")
+
+
+def same_file_contents(first, second):
+    if (
+        first.is_symlink()
+        or second.is_symlink()
+        or not first.is_file()
+        or not second.is_file()
+    ):
+        raise OSError("Expected regular asset files.")
+    if first.stat().st_size != second.stat().st_size:
+        return False
+    with first.open("rb") as left, second.open("rb") as right:
+        return (
+            hashlib.file_digest(left, "sha256").digest()
+            == hashlib.file_digest(right, "sha256").digest()
+        )
+
+
+def copy_private_file(source, target_key):
+    """Publish a complete private copy; interrupted copies never use final keys."""
+    storage = Asset._meta.get_field("url").storage
+    target = Path(storage.path(target_key))
+    if target.exists():
+        if not same_file_contents(source, target):
+            raise OSError(
+                "A different file already exists at the recovery destination."
+            )
+        return
+    temporary_key = str(
+        PurePosixPath(target_key).parent / (".transfer-" + uuid.uuid4().hex)
+    )
+    try:
+        with source.open("rb") as original:
+            temporary_key = storage.save(temporary_key, File(original))
+        temporary = Path(storage.path(temporary_key))
+        if not same_file_contents(source, temporary):
+            raise OSError("The private file copy could not be verified.")
+        with temporary.open("rb") as complete:
+            os.fsync(complete.fileno())
+        os.replace(temporary, target)
+    finally:
+        try:
+            storage.delete(temporary_key)
+        except OSError:
+            logger.exception("asset_transfer_cleanup_failed")
+
+
+def promote_asset(job):
+    """Validate the claimed quarantine file, then copy and commit publication.
+
+    No public route calls this service. The source is removed only after the
+    database commits; rollback leaves the original quarantined file intact.
+    """
+    if not is_quarantine_key(job.url.name) or not job.processing_token:
+        raise ValueError("Only claimed quarantine files can be promoted.")
+    live_claim = Asset.objects.filter(
+        pk=job.pk,
+        url=job.url.name,
+        processing_status=Asset.ProcessingStatus.PROCESSING,
+        processing_token=job.processing_token,
+        processing_lease_until__gt=timezone.now(),
+    )
+    if not live_claim.exists():
+        return False
+    if not Path(job.url.path).is_file():
+        raise FileNotFoundError("Quarantined upload is missing.")
+    if check_asset_security(job) is not True:
+        raise RuntimeError("Required file-type validation did not complete.")
+    storage = job.url.storage
+    target_key = "approved/%s/%s" % (job.pk.hex, job.processing_token.hex)
+    try:
+        with transaction.atomic():
+            if (
+                not AssetSeries.objects.select_for_update()
+                .filter(code=job.code)
+                .exists()
+            ):
+                return False
+            current = live_claim.select_for_update().first()
+            if current is None:
+                return False
+            copy_private_file(Path(storage.path(current.url.name)), target_key)
+            # Copying may take time; an expired claim must never publish.
+            if not live_claim.filter(processing_lease_until__gt=timezone.now()).update(
+                url=target_key,
+                processing_status=Asset.ProcessingStatus.APPROVED,
+                processing_detail="Required file-type validation passed.",
+                processing_updated_at=timezone.now(),
+                processing_token=None,
+                processing_lease_until=None,
+            ):
+                raise RuntimeError(
+                    "The processing claim expired before promotion completed."
+                )
+            source_key = current.url.name
+            transaction.on_commit(lambda: delete_unreferenced(source_key, storage))
+    except BaseException:
+        delete_unreferenced(target_key, storage)
+        raise
+    return True
+
+
+def recover_processing_jobs():
+    """Fence interrupted workers; retries remain explicit and bounded."""
+    now = timezone.now()
+    return Asset.objects.filter(
+        processing_status=Asset.ProcessingStatus.PROCESSING,
+        processing_lease_until__lte=now,
+    ).update(
+        processing_status=Asset.ProcessingStatus.ERROR,
+        processing_detail="Processing was interrupted. An operator can retry it.",
+        processing_updated_at=now,
+        processing_token=None,
+        processing_lease_until=None,
+    )
+
+
+def claim_processing_job(retry_errors=False, cutoff=None):
+    cutoff = cutoff or timezone.now()
+    eligible = Q(processing_status=Asset.ProcessingStatus.PENDING)
+    if retry_errors:
+        eligible |= Q(processing_status=Asset.ProcessingStatus.ERROR)
+    with transaction.atomic():
+        jobs = Asset.objects.filter(
+            eligible,
+            processing_updated_at__lte=cutoff,
+            processing_attempts__lt=MAX_PROCESSING_ATTEMPTS,
+            url__regex=QUARANTINE_KEY_PATTERN,
+        ).order_by("upload_datetime", "id")
+        if connection.features.has_select_for_update_skip_locked:
+            jobs = jobs.select_for_update(skip_locked=True)
+        else:
+            jobs = jobs.select_for_update()
+        job = jobs.first()
+        if job is None:
+            return None
+        now, token = timezone.now(), uuid.uuid4()
+        claimed = Asset.objects.filter(
+            pk=job.pk,
+            processing_status=job.processing_status,
+            processing_attempts=job.processing_attempts,
+            processing_token__isnull=True,
+        ).update(
+            processing_status=Asset.ProcessingStatus.PROCESSING,
+            processing_detail="Checking required file-type validation.",
+            processing_updated_at=now,
+            processing_attempts=job.processing_attempts + 1,
+            processing_token=token,
+            processing_lease_until=now + PROCESSING_LEASE,
+        )
+        if not claimed:
+            return None
+        job.refresh_from_db()
+        return job
+
+
+def finish_processing_job(job, status, detail):
+    """Finish without approval; unavailable validators do not consume retries."""
+    if status not in {
+        Asset.ProcessingStatus.REJECTED,
+        Asset.ProcessingStatus.ERROR,
+        Asset.ProcessingStatus.PENDING,
+    }:
+        raise ValueError("Successful checks must use private file promotion.")
+    changes = {
+        "processing_status": status,
+        "processing_detail": detail,
+        "processing_updated_at": timezone.now(),
+        "processing_token": None,
+        "processing_lease_until": None,
+    }
+    if status == Asset.ProcessingStatus.PENDING:
+        changes["processing_attempts"] = F("processing_attempts") - 1
+    with transaction.atomic():
+        if not AssetSeries.objects.select_for_update().filter(code=job.code).exists():
+            return False
+        return bool(
+            Asset.objects.filter(
+                pk=job.pk,
+                url=job.url.name,
+                processing_status=Asset.ProcessingStatus.PROCESSING,
+                processing_token=job.processing_token,
+                processing_lease_until__gt=timezone.now(),
+            ).update(**changes)
+        )
+
+
+def process_uploads(limit=100, retry_errors=False):
+    # Process each eligible version at most once per invocation.
+    cutoff = timezone.now()
+    recover_processing_jobs()
+    processed = 0
+    for _ in range(limit):
+        job = claim_processing_job(retry_errors=retry_errors, cutoff=cutoff)
+        if job is None:
+            break
+        try:
+            promote_asset(job)
+        except ValidationError:
+            status, detail = (
+                Asset.ProcessingStatus.REJECTED,
+                "This file did not pass validation. Upload a replacement.",
+            )
+        except NotImplementedError:
+            status, detail = (
+                Asset.ProcessingStatus.PENDING,
+                "Awaiting required file-type validation. The file remains quarantined.",
+            )
+        except Exception:
+            logger.exception("asset_processing_failed", extra={"asset_id": str(job.pk)})
+            status, detail = (
+                Asset.ProcessingStatus.ERROR,
+                "File processing could not finish. An operator can retry it.",
+            )
+        else:
+            processed += 1
+            continue
+        finish_processing_job(job, status, detail)
+        processed += 1
+    return processed
+
+
+def quarantine_recovery_key(legacy_key):
+    # Stable across retries, including a crash after relocation but before commit.
+    digest = hashlib.sha256(("legacy:" + legacy_key).encode()).hexdigest()[:32]
+    return "quarantine/" + digest
+
+
+def legacy_file_path(name):
+    """Legacy paths are available only to the operator migration, never media."""
+    if is_approved_key(name):
+        return Path(Asset._meta.get_field("url").storage.path(name))
+    parts = PurePosixPath(name).parts
+    if (
+        not parts
+        or parts[0] not in {"uploads", "unverified"}
+        or ".." in parts
+        or "\\" in name
+    ):
+        raise ValueError("Invalid historical storage key.")
+    root = settings.MEDIA_ROOT if parts[0] == "uploads" else settings.ASSET_PRIVATE_ROOT
+    path = Path(FileSystemStorage(location=root).path(name))
+    if not path.resolve().is_relative_to(Path(root).resolve()) or path.is_symlink():
+        raise ValueError("Historical storage path is not a safe regular file path.")
+    return path
+
+
+def quarantine_inventory():
+    """Read-only; works before Item 1's status fields have been migrated."""
+    storage = Asset._meta.get_field("url").storage
+    rows = list(
+        Asset.objects.order_by("code", "version_no", "id").values(
+            "id", "code", "version_no", "url"
+        )
+    )
+    for row in rows:
+        name = row["url"]
+        row["migrate"] = not is_quarantine_key(name)
+        try:
+            if not row["migrate"]:
+                path = Path(storage.path(name))
+                row["state"] = "isolated" if path.is_file() else "missing"
+                continue
+            source = legacy_file_path(name)
+            target = Path(storage.path(quarantine_recovery_key(name)))
+            if source.is_file():
+                row["state"] = (
+                    "ready"
+                    if not target.exists() or same_file_contents(source, target)
+                    else "inconsistent"
+                )
+                row["bytes"] = source.stat().st_size
+            else:
+                row["state"] = "recoverable" if target.is_file() else "missing"
+        except (ValueError, OSError, SuspiciousFileOperation):
+            row["state"] = "inconsistent"
+    return rows
+
+
+def quarantine_existing_uploads():
+    """Explicit Option B operation: revoke first, then relocate legacy files.
+
+    Relocation removes the old source only after a verified private copy exists.
+    A rollback or crash leaves that deterministic copy available for a retry.
+    Shared legacy filenames are relocated and updated as a group.
+    """
+    rows = [row for row in quarantine_inventory() if row["migrate"]]
+    ids = [row["id"] for row in rows]
+    with transaction.atomic():
+        list(
+            AssetSeries.objects.select_for_update()
+            .filter(code__in={row["code"] for row in rows})
+            .order_by("code")
+        )
+        list(Asset.objects.select_for_update().filter(pk__in=ids).order_by("id"))
+        Asset.objects.filter(pk__in=ids, url__in={row["url"] for row in rows}).update(
+            processing_status=Asset.ProcessingStatus.PENDING,
+            processing_detail="Awaiting required file-type validation.",
+            processing_attempts=0,
+            processing_token=None,
+            processing_lease_until=None,
+            processing_updated_at=timezone.now(),
+        )
+    storage = Asset._meta.get_field("url").storage
+    migrated, issues = 0, []
+    for old_key in dict.fromkeys(row["url"] for row in rows):
+        group = [row for row in rows if row["url"] == old_key]
+        group_ids = [row["id"] for row in group]
+        try:
+            with transaction.atomic():
+                list(
+                    AssetSeries.objects.select_for_update()
+                    .filter(code__in={row["code"] for row in group})
+                    .order_by("code")
+                )
+                current = Asset.objects.select_for_update().filter(
+                    pk__in=group_ids, url=old_key
+                )
+                if not list(current):
+                    continue
+                source = legacy_file_path(old_key)
+                target_key = quarantine_recovery_key(old_key)
+                target = Path(storage.path(target_key))
+                if source.exists():
+                    copy_private_file(source, target_key)
+                    # Remove the exposed source BEFORE committing a migrated key.
+                    source.unlink()
+                elif not target.is_file() or target.is_symlink():
+                    raise FileNotFoundError(
+                        "Historical file is missing from both its original and recovery locations."
+                    )
+                count = current.update(
+                    url=target_key,
+                    processing_status=Asset.ProcessingStatus.PENDING,
+                    processing_detail="Awaiting required file-type validation.",
+                    processing_updated_at=timezone.now(),
+                )
+            migrated += count
+        except Exception:
+            logger.exception(
+                "asset_quarantine_migration_failed", extra={"asset_file": old_key}
+            )
+            Asset.objects.filter(pk__in=group_ids, url=old_key).update(
+                processing_status=Asset.ProcessingStatus.ERROR,
+                processing_detail="Historical file could not be quarantined. An operator must check its source or recovery file.",
+                processing_updated_at=timezone.now(),
+            )
+            issues.extend(str(row["id"]) for row in group)
+    return migrated, issues
+
+
+def purge_rejected_uploads(days=30, delete=False):
+    """Manual retention cleanup preserves version records, metadata and tags."""
+    if days < 1:
+        raise ValueError("Retention must be at least one day.")
+    cutoff = timezone.now() - timedelta(days=days)
+    candidates = Asset.objects.filter(
+        processing_status=Asset.ProcessingStatus.REJECTED,
+        processing_updated_at__lt=cutoff,
+        url__regex=QUARANTINE_KEY_PATTERN,
+    )
+    ids = list(candidates.values_list("pk", flat=True))
+    removed = 0
+    if delete:
+        for asset_id in ids:
+            with transaction.atomic():
+                code = (
+                    Asset.objects.filter(pk=asset_id)
+                    .values_list("code", flat=True)
+                    .first()
+                )
+                if code is None:
+                    continue
+                AssetSeries.objects.select_for_update().get(code=code)
+                asset = candidates.select_for_update().filter(pk=asset_id).first()
+                if asset is None:
+                    continue
+                name, storage = asset.url.name, asset.url.storage
+                Asset.objects.filter(pk=asset.pk).update(
+                    url="",
+                    processing_detail="Rejected file removed after the retention period. Upload a replacement.",
+                )
+                transaction.on_commit(
+                    lambda name=name, storage=storage: delete_unreferenced(
+                        name, storage
+                    )
+                )
+            removed += 1
+    return removed if delete else len(ids)
 
 
 @receiver(pre_save, sender=Asset)

@@ -8,11 +8,33 @@ from .models import Asset, AssetSeries, Tags
 
 @admin.register(Asset)
 class AssetAdmin(admin.ModelAdmin):
-    list_display = ("name", "code", "version_no", "uploaded_by", "upload_datetime")
+    list_display = (
+        "name",
+        "code",
+        "version_no",
+        "processing_status",
+        "uploaded_by",
+        "upload_datetime",
+    )
     search_fields = ("name", "code", "description")
-    list_filter = ("file_type",)
+    list_filter = ("file_type", "processing_status")
     filter_horizontal = ("tags",)
-    readonly_fields = ("id", "code", "version_no", "uploaded_by", "upload_datetime", "file_type", "file_size", "asset_file")
+    readonly_fields = (
+        "id",
+        "code",
+        "version_no",
+        "uploaded_by",
+        "upload_datetime",
+        "file_type",
+        "file_size",
+        "asset_file",
+        "processing_status",
+        "processing_detail",
+        "processing_updated_at",
+        "processing_attempts",
+        "processing_token",
+        "processing_lease_until",
+    )
     exclude = ("url",)
 
     def has_add_permission(self, request):
@@ -31,13 +53,19 @@ class AssetAdmin(admin.ModelAdmin):
     @admin.display(description="File")
     def asset_file(self, obj):
         url = signed_media_url(obj, obj.media_request)["url"]
+        if not url:
+            return obj.get_processing_status_display() + ". File unavailable."
         return format_html('<a href="{}&download=1">Download file</a>', url)
 
     @transaction.atomic
     def delete_queryset(self, request, queryset):
-        list(AssetSeries.objects.select_for_update().filter(
-            code__in=queryset.values("code"),
-        ).order_by("code"))
+        list(
+            AssetSeries.objects.select_for_update()
+            .filter(
+                code__in=queryset.values("code"),
+            )
+            .order_by("code")
+        )
         queryset.delete()
 
 

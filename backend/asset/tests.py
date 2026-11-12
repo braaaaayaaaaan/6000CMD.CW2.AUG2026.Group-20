@@ -11,7 +11,6 @@ from django.test import SimpleTestCase, TestCase
 
 from .models import Asset, Tags
 
-
 REPLACEMENT = ("asset", "0001_squashed_0010_fresh_schema")
 LEGACY_LEAF = ("asset", "0010_asset_version_no")
 
@@ -24,28 +23,48 @@ class AssetMigrationGraphTests(SimpleTestCase):
             original.project_state([LEGACY_LEAF]),
             fresh.project_state([REPLACEMENT]),
         )
-        self.assertEqual(fresh.graph.leaf_nodes("asset"), [
-            ("asset", "0012_asset_sha256"),
-        ])
+        self.assertEqual(
+            fresh.graph.leaf_nodes("asset"),
+            [
+                ("asset", "0013_merge_sha256_upload_processing"),
+            ],
+        )
 
     def test_partial_history_keeps_original_graph_for_explicit_review(self):
-        applied = {("asset", "0001_initial"): object(), ("asset", "0002_tags"): object()}
-        with patch.object(MigrationRecorder, "applied_migrations", return_value=applied):
+        applied = {
+            ("asset", "0001_initial"): object(),
+            ("asset", "0002_tags"): object(),
+        }
+        with patch.object(
+            MigrationRecorder, "applied_migrations", return_value=applied
+        ):
             loader = MigrationLoader(connection)
         self.assertNotIn(REPLACEMENT, loader.graph.nodes)
         self.assertIn(("asset", "0003_alter_tags_id"), loader.graph.nodes)
 
     def test_postgresql_ddl_creates_uuid_keys_without_connecting(self):
         state = MigrationLoader(None).project_state([REPLACEMENT])
-        postgres = DatabaseWrapper({
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": "unused", "USER": "unused", "PASSWORD": "unused",
-            "HOST": "unused.invalid", "PORT": "5432", "OPTIONS": {},
-            "TIME_ZONE": None, "AUTOCOMMIT": True,
-        }, alias="offline_postgresql")
+        postgres = DatabaseWrapper(
+            {
+                "ENGINE": "django.db.backends.postgresql",
+                "NAME": "unused",
+                "USER": "unused",
+                "PASSWORD": "unused",
+                "HOST": "unused.invalid",
+                "PORT": "5432",
+                "OPTIONS": {},
+                "TIME_ZONE": None,
+                "AUTOCOMMIT": True,
+            },
+            alias="offline_postgresql",
+        )
         # Only SQL generation is under test; never open a socket.
         postgres.__dict__["pg_version"] = 170000
-        with patch.object(postgres, "ensure_connection", side_effect=AssertionError("Offline SQL test attempted a connection")):
+        with patch.object(
+            postgres,
+            "ensure_connection",
+            side_effect=AssertionError("Offline SQL test attempted a connection"),
+        ):
             with postgres.schema_editor(collect_sql=True, atomic=False) as editor:
                 for name in ("Tags", "UniqueCodeGenerator", "Asset"):
                     editor.create_model(state.apps.get_model("asset", name))
@@ -53,14 +72,17 @@ class AssetMigrationGraphTests(SimpleTestCase):
         self.assertIn('CREATE TABLE "asset_tags" ("id" uuid', sql)
         self.assertIn('CREATE TABLE "asset_asset_tags"', sql)
         self.assertNotIn("::uuid", sql)
-        self.assertNotIn('DROP TABLE', sql)
+        self.assertNotIn("DROP TABLE", sql)
 
 
 class AssetSchemaTests(TestCase):
     def create_asset(self):
         return Asset.objects.create(
-            name="Example", description="Migration regression test",
-            uploaded_by="test-user", file_type="png", file_size=1,
+            name="Example",
+            description="Migration regression test",
+            uploaded_by="test-user",
+            file_type="png",
+            file_size=1,
             url="uploads/example.png",
         )
 

@@ -32,7 +32,7 @@ def file_binding(asset):
 
 def signed_media_url(asset, request):
     user = getattr(request, "user", None)
-    if not user or not user.is_authenticated:
+    if not asset.is_published or not user or not user.is_authenticated:
         return {"url": None, "url_expires_at": None}
     sid = request.auth.get("sid") if getattr(request, "auth", None) else request.session.get("account_session")
     session_record(user, sid, True)
@@ -54,7 +54,11 @@ def signed_media_url(asset, request):
 @throttle_classes([])
 def asset_file(request, asset_id):
     try:
-        payload = signing.loads(request.query_params.get("token", ""), salt=SALT, max_age=settings.MEDIA_URL_LIFETIME_SECONDS)
+        payload = signing.loads(
+            request.query_params.get("token", ""),
+            salt=SALT,
+            max_age=settings.MEDIA_URL_LIFETIME_SECONDS,
+        )
         user = User.objects.get(pk=payload["user"], is_active=True)
         if (payload["asset"] != str(asset_id) or payload["version"] != user.token_version
                 or request.user.pk != user.pk
@@ -63,7 +67,7 @@ def asset_file(request, asset_id):
         session_record(user, payload.get("sid"), True)
     except (signing.BadSignature, User.DoesNotExist, KeyError, ValueError, TypeError, AuthenticationFailed, DjangoValidationError):
         raise PermissionDenied("This media link is invalid or expired.") from None
-    asset = get_object_or_404(Asset, pk=asset_id)
+    asset = get_object_or_404(Asset.published(), pk=asset_id)
     if payload.get("file") != file_binding(asset):
         raise PermissionDenied("This media link is no longer valid. Request a new link.")
     file = None
@@ -76,7 +80,7 @@ def asset_file(request, asset_id):
             (validate_glb if kind == "glb" else validate_mp4)(file, size)
             file.seek(0)
     except (OSError, ValueError, SuspiciousFileOperation, TypeError, KeyError, AttributeError, struct.error, RecursionError):
-        if file:
+        if file is not None:
             file.close()
         raise Http404(MISSING_FILE_MESSAGE) from None
     content_type = MIME_TYPES.get(kind, "application/octet-stream")
@@ -111,14 +115,21 @@ def asset_file(request, asset_id):
                     yield block
             finally:
                 file.close()
-        response = FileResponse(file, as_attachment=attachment, filename=filename, content_type=content_type)
+
+        response = FileResponse(
+            file, as_attachment=attachment, filename=filename, content_type=content_type
+        )
         response.streaming_content = chunks()
         response.status_code = 206
         response["Content-Length"] = str(end - start + 1)
         response["Content-Range"] = "bytes %s-%s/%s" % (start, end, size)
-        response["Content-Disposition"] = content_disposition_header(attachment, filename)
+        response["Content-Disposition"] = content_disposition_header(
+            attachment, filename
+        )
     else:
-        response = FileResponse(file, as_attachment=attachment, filename=filename, content_type=content_type)
+        response = FileResponse(
+            file, as_attachment=attachment, filename=filename, content_type=content_type
+        )
     response["Accept-Ranges"] = "bytes"
     response["Cache-Control"] = "private, no-store"
     response["X-Content-Type-Options"] = "nosniff"

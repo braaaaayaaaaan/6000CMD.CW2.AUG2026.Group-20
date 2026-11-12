@@ -36,7 +36,9 @@ if boolean_environment("DJANGO_READ_DOT_ENV", default=True):
 
 SECRET_KEY = required_environment("DJANGO_SECRET_KEY")
 DEBUG = boolean_environment("DJANGO_DEBUG", default=False)
-ALLOWED_HOSTS = list_environment("DJANGO_ALLOWED_HOSTS", default=("localhost", "127.0.0.1", "[::1]"))
+ALLOWED_HOSTS = list_environment(
+    "DJANGO_ALLOWED_HOSTS", default=("localhost", "127.0.0.1", "[::1]")
+)
 
 
 # Application definition
@@ -155,9 +157,16 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.UserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "100/hour", "user": "3000/hour", "login": "10/minute",
-        "sensitive": "10/minute", "signup": "10/hour", "uploads": "60/hour", "refresh": "60/minute",
-        "recovery": "5/hour", "verification": "5/hour", "mfa": "10/minute",
+        "anon": "100/hour",
+        "user": "3000/hour",
+        "login": "10/minute",
+        "sensitive": "10/minute",
+        "signup": "10/hour",
+        "uploads": "60/hour",
+        "refresh": "60/minute",
+        "recovery": "5/hour",
+        "verification": "5/hour",
+        "mfa": "10/minute",
     },
     "NUM_PROXIES": integer_environment("AUTH_NUM_PROXIES", 0, minimum=0, maximum=20),
 }
@@ -177,6 +186,17 @@ STORAGES = {
     "default": {"BACKEND": "asset.storage.PrivateAssetStorage"},
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
+ASSET_PRIVATE_ROOT = path_environment(
+    "DJANGO_ASSET_PRIVATE_ROOT", BASE_DIR, "private_assets"
+)
+if any(
+    root.resolve() == ASSET_PRIVATE_ROOT.resolve()
+    or root.resolve() in ASSET_PRIVATE_ROOT.resolve().parents
+    for root in (MEDIA_ROOT, STATIC_ROOT)
+):
+    raise ValueError(
+        "DJANGO_ASSET_PRIVATE_ROOT must be outside media and static storage."
+    )
 MEDIA_FRAME_ALLOWED_ORIGINS = origins_environment("MEDIA_FRAME_ALLOWED_ORIGINS")
 
 # Admin/API pages cannot be framed. Media previews have their own origin policy.
@@ -185,7 +205,9 @@ X_FRAME_OPTIONS = "DENY"
 AUTH_USER_MODEL = "user.User"
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=integer_environment("JWT_ACCESS_TOKEN_MINUTES", 15)),
+    "ACCESS_TOKEN_LIFETIME": timedelta(
+        minutes=integer_environment("JWT_ACCESS_TOKEN_MINUTES", 15)
+    ),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "CHECK_REVOKE_TOKEN": True,
@@ -241,15 +263,21 @@ CACHES = {"default": {
     "LOCATION": os.environ.get("AUTH_CACHE_LOCATION", "dam-auth"),
 }}
 
-ASSET_UPLOAD_MAX_BYTES = integer_environment("ASSET_UPLOAD_MAX_MB", 100) * 1024 * 1024
+ASSET_UPLOAD_MAX_BYTES = (
+    integer_environment("ASSET_UPLOAD_MAX_MB", 100, maximum=100) * 1024 * 1024
+)
 MEDIA_URL_LIFETIME_SECONDS = integer_environment("MEDIA_URL_LIFETIME_SECONDS", 300)
 FILE_UPLOAD_HANDLERS = [
     "asset.files.LimitedUploadHandler",
     "django.core.files.uploadhandler.MemoryFileUploadHandler",
     "django.core.files.uploadhandler.TemporaryFileUploadHandler",
 ]
-SECURE_SSL_REDIRECT = boolean_environment("DJANGO_SECURE_SSL_REDIRECT", default=not DEBUG)
-SESSION_COOKIE_SECURE = boolean_environment("DJANGO_SESSION_COOKIE_SECURE", default=not DEBUG)
+SECURE_SSL_REDIRECT = boolean_environment(
+    "DJANGO_SECURE_SSL_REDIRECT", default=not DEBUG
+)
+SESSION_COOKIE_SECURE = boolean_environment(
+    "DJANGO_SESSION_COOKIE_SECURE", default=not DEBUG
+)
 CSRF_COOKIE_SECURE = boolean_environment("DJANGO_CSRF_COOKIE_SECURE", default=not DEBUG)
 SECURE_HSTS_SECONDS = 31536000 if not DEBUG else 0
 SECURE_CONTENT_TYPE_NOSNIFF = True

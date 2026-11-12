@@ -17,7 +17,7 @@ const nextConfig = {
   allowedDevOrigins: ['127.0.0.1', '192.168.0.216'],
 
   experimental: {
-    optimizePackageImports: ['@chakra-ui/react']
+    optimizePackageImports: ["@chakra-ui/react"],
   },
 
   reactCompiler: true,
