@@ -11,13 +11,13 @@ export default function EditorHome() {
   const router = useRouter();
   const session = useBrowserSession();
   useEffect(() => {
-    if (session.ready && !session.accessToken) router.replace("/login");
-  }, [session.ready, session.accessToken, router]);
+    if (session.ready && !session.authenticated) router.replace("/login");
+  }, [session.ready, session.authenticated, router]);
 
   return (
     <EditorLayout>
       <h1><b>Digital Assets</b></h1>
-      {session.ready && session.accessToken
+      {session.ready && session.authenticated
         ? <AssetCard />
         : <Text role="status" py="6">Loading your workspace…</Text>}
     </EditorLayout>

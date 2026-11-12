@@ -17,9 +17,9 @@ export default function TagManagement() {
   const session = useBrowserSession();
   const editable = session.ready && ["Editor", "Admin"].includes(session.group);
   useEffect(() => {
-    if (session.ready && !session.accessToken) router.replace("/login");
+    if (session.ready && !session.authenticated) router.replace("/login");
     else if (session.ready && !editable) router.replace("/editor/home");
-  }, [session.ready, session.accessToken, editable, router]);
+  }, [session.ready, session.authenticated, editable, router]);
   const { tags, loading, error, refresh, revision } = useTags();
   const usage = useApiResource("/tag-usage/", { enabled: !loading && !error, refreshKey: revision });
   const [requestedPage, setPage] = useState(1);

@@ -9,8 +9,8 @@ export default function Landing() {
   const session = useBrowserSession();
 
   useEffect(() => {
-    if (session.ready) router.replace(session.accessToken ? "/editor/home" : "/login");
-  }, [session.ready, session.accessToken, router]);
+    if (session.ready) router.replace(session.authenticated ? "/editor/home" : "/login");
+  }, [session.ready, session.authenticated, router]);
 
   return <p role="status">Loading…</p>;
 }

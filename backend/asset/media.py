@@ -13,6 +13,8 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny
 
 from user.models import User
+from user.security import session_record
+from rest_framework.exceptions import AuthenticationFailed
 from .files import MIME_TYPES, detect_type
 from .models import Asset
 
@@ -27,6 +29,7 @@ def signed_media_url(asset, request):
     token = signing.dumps({
         "asset": str(asset.pk), "user": str(user.pk), "version": user.token_version,
         "auth": user.get_session_auth_hash(),
+        "sid": str(request.auth.get("sid")) if getattr(request, "auth", None) else request.session.get("account_session"),
     }, salt=SALT, compress=True)
     path = reverse("asset-file", args=[asset.pk]) + "?token=" + token
     return {
@@ -45,7 +48,8 @@ def asset_file(request, asset_id):
         if (payload["asset"] != str(asset_id) or payload["version"] != user.token_version
                 or not constant_time_compare(payload["auth"], user.get_session_auth_hash())):
             raise PermissionDenied("This media link is no longer valid.")
-    except (signing.BadSignature, User.DoesNotExist, KeyError, ValueError, TypeError):
+        session_record(user, payload.get("sid"), True)
+    except (signing.BadSignature, User.DoesNotExist, KeyError, ValueError, TypeError, AuthenticationFailed):
         raise PermissionDenied("This media link is invalid or expired.") from None
     asset = get_object_or_404(Asset, pk=asset_id)
     try:

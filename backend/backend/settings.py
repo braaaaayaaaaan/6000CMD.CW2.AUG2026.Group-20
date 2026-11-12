@@ -63,6 +63,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "user.middleware.AccountSessionMiddleware",
     "backend.middleware.LoginThrottleMiddleware",
     "backend.middleware.AuditMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -146,7 +147,7 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 40,
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "user.authentication.RevocableJWTAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
+        "user.authentication.VerifiedSessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_THROTTLE_CLASSES": [
@@ -156,12 +157,14 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": "100/hour", "user": "3000/hour", "login": "10/minute",
         "signup": "10/hour", "uploads": "60/hour", "refresh": "60/minute",
+        "recovery": "5/hour", "verification": "5/hour", "mfa": "10/minute",
     },
-    "NUM_PROXIES": 0,
+    "NUM_PROXIES": integer_environment("AUTH_NUM_PROXIES", 0, minimum=0, maximum=20),
 }
 
 CORS_ALLOWED_ORIGINS = origins_environment("CORS_ALLOWED_ORIGINS")
 CSRF_TRUSTED_ORIGINS = origins_environment("CSRF_TRUSTED_ORIGINS")
+CORS_ALLOW_CREDENTIALS = True
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = path_environment("DJANGO_MEDIA_ROOT", BASE_DIR, "media")
@@ -173,11 +176,61 @@ X_FRAME_OPTIONS = "DENY"
 AUTH_USER_MODEL = "user.User"
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=integer_environment("JWT_ACCESS_TOKEN_MINUTES", 40)),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=integer_environment("JWT_ACCESS_TOKEN_MINUTES", 15)),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "CHECK_REVOKE_TOKEN": True,
+    "REFRESH_TOKEN_LIFETIME": timedelta(hours=integer_environment("JWT_REFRESH_TOKEN_HOURS", 24)),
 }
+
+# Host-only cookies. Use the same hostname for frontend/API in local development.
+AUTH_COOKIE_ACCESS = "dam_access"
+AUTH_COOKIE_REFRESH = "dam_refresh"
+AUTH_COOKIE_SECURE = boolean_environment("AUTH_COOKIE_SECURE", default=not DEBUG)
+AUTH_COOKIE_SAMESITE = os.environ.get("AUTH_COOKIE_SAMESITE", "Lax")
+if AUTH_COOKIE_SAMESITE not in {"Strict", "Lax", "None"}:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured("AUTH_COOKIE_SAMESITE must be Strict, Lax, or None.")
+if AUTH_COOKIE_SAMESITE == "None" and not AUTH_COOKIE_SECURE:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured("SameSite=None requires AUTH_COOKIE_SECURE=true.")
+SESSION_COOKIE_AGE = integer_environment("AUTH_SESSION_HOURS", 12) * 3600
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = AUTH_COOKIE_SAMESITE
+CSRF_COOKIE_SAMESITE = AUTH_COOKIE_SAMESITE
+PASSWORD_RESET_TIMEOUT = integer_environment("PASSWORD_RESET_TIMEOUT_SECONDS", 1800)
+EMAIL_VERIFICATION_TIMEOUT = integer_environment("EMAIL_VERIFICATION_TIMEOUT_SECONDS", 86400)
+MFA_CHALLENGE_TIMEOUT = 300
+MFA_ENROLMENT_TIMEOUT = 600
+# Universal policy; legacy environment values cannot make any role optional.
+MFA_REQUIRED_ROLES = ["Viewer", "Editor", "Admin"]
+MFA_ENCRYPTION_KEY = os.environ.get("MFA_ENCRYPTION_KEY", "")
+MFA_ISSUER = os.environ.get("MFA_ISSUER", "manticAI")
+AUTH_MAX_FAILURES = integer_environment("AUTH_MAX_FAILURES", 5)
+AUTH_LOCK_SECONDS = integer_environment("AUTH_LOCK_SECONDS", 300)
+ACCOUNT_ALLOWED_EMAIL_DOMAINS = [domain.lower() for domain in list_environment("ACCOUNT_ALLOWED_EMAIL_DOMAINS")]
+ACCOUNT_FRONTEND_URL = os.environ.get("ACCOUNT_FRONTEND_URL", "http://127.0.0.1:3000").rstrip("/")
+# Validate the fixed link destination; never construct recovery links from Host.
+origins_environment("ACCOUNT_FRONTEND_URL", default=(ACCOUNT_FRONTEND_URL,))
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+if not DEBUG and EMAIL_BACKEND in {"django.core.mail.backends.console.EmailBackend", "django.core.mail.backends.filebased.EmailBackend"}:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured("Console/file email is development-only. Configure a private delivery backend when DEBUG=false.")
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "localhost")
+EMAIL_PORT = integer_environment("EMAIL_PORT", 587, maximum=65535)
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = boolean_environment("EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = boolean_environment("EMAIL_USE_SSL", default=False)
+EMAIL_TIMEOUT = 10
+ACCOUNT_EMAIL_ASYNC = boolean_environment("ACCOUNT_EMAIL_ASYNC", default=True)
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "").strip() or EMAIL_HOST_USER or "noreply@example.invalid"
+# Database-backed per-account lockouts work across workers without Redis.
+# IP throttles can additionally use an existing shared Django cache deployment.
+CACHES = {"default": {
+    "BACKEND": os.environ.get("AUTH_CACHE_BACKEND", "django.core.cache.backends.locmem.LocMemCache"),
+    "LOCATION": os.environ.get("AUTH_CACHE_LOCATION", "dam-auth"),
+}}
 
 ASSET_UPLOAD_MAX_BYTES = integer_environment("ASSET_UPLOAD_MAX_MB", 100) * 1024 * 1024
 MEDIA_URL_LIFETIME_SECONDS = integer_environment("MEDIA_URL_LIFETIME_SECONDS", 300)

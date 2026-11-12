@@ -1,0 +1,70 @@
+"use client";
+
+import { Box, Button, Field, Grid, Heading, Image, Input, Stack, Text } from "@chakra-ui/react";
+import { useEffect, useState } from "react";
+import { api, errorMessage } from "@/utils/api";
+import { PasswordInput } from "@/components/ui/password-input";
+
+export default function MfaChallenge({ challenge, enrolmentRequired, passwordRequired = false, initialSetup, onComplete, onCancel, cancelLabel = "Back to Login" }) {
+  const [setup, setSetup] = useState(initialSetup || null);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [password, setPassword] = useState("");
+  const validChallenge = typeof challenge === "string" && challenge.length > 0 && typeof enrolmentRequired === "boolean";
+  useEffect(() => {
+    if (!validChallenge || !enrolmentRequired || initialSetup) return;
+    const controller = new AbortController();
+    api.post("/api/account/mfa/enrol/", { challenge }, { signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) setSetup(data); })
+      .catch((failure) => { if (!controller.signal.aborted) setError(errorMessage(failure)); });
+    return () => controller.abort();
+  }, [challenge, enrolmentRequired, initialSetup, validChallenge]);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (saving) return;
+    setSaving(true); setError("");
+    try {
+      const { data } = await api.post("/api/account/mfa/" + (enrolmentRequired ? "confirm/" : "verify/"), { challenge, code, ...(passwordRequired ? { password } : {}) });
+      setCode(""); setPassword("");
+      onComplete(data);
+    } catch (failure) { setError(errorMessage(failure)); }
+    finally { setSaving(false); }
+  }
+
+  if (!validChallenge) return <Stack gap="4">
+    <Text role="alert">Unable to load authenticator setup. Return to login to continue.</Text>
+    {onCancel && <Button type="button" variant="outline" borderColor="blue.700" color="blue.700" onClick={onCancel}>{cancelLabel}</Button>}
+  </Stack>;
+
+  return <form method="post" onSubmit={submit}><Stack gap="3" textAlign="left">
+    <Heading size="lg" color="blue.700" textAlign="center">{enrolmentRequired ? "Authenticator Setup" : "Authenticator Verification"}</Heading>
+    <Text color="fg.muted" fontSize="sm" textAlign="center">{enrolmentRequired ? "Scan the QR code with your authenticator app, then enter its six-digit code." : "Enter the current six-digit code from your authenticator app."}</Text>
+    {enrolmentRequired && !setup && !error && <Text role="status" textAlign="center">Preparing your QR code...</Text>}
+    <Grid templateColumns={setup ? { base: "minmax(0, 1fr)", md: "minmax(0, 1fr) minmax(0, 1fr)" } : "minmax(0, 1fr)"} gap={{ base: "4", md: "6" }} alignItems="center">
+    {setup && <Stack gap="2" minW="0">
+      <Box p="2" bg="white" borderWidth="1px" borderColor="gray.300" borderRadius="lg" alignSelf="center" maxW="full">
+        <Image src={setup.qr_code} alt="Scan this QR code with your authenticator app" w="180px" maxW="full" aspectRatio="1" />
+      </Box>
+      <Text fontSize="xs" color="fg.muted" textAlign="center">New codes appear every 30 seconds.</Text>
+      <Box as="details" fontSize="sm"><Box as="summary" cursor="pointer" color="blue.700">Cannot scan the QR code?</Box>
+        <Text mt="2">Add an account manually in your app using this setup key:</Text>
+        <Text mt="1" fontFamily="mono" overflowWrap="anywhere">{setup.secret}</Text>
+      </Box>
+    </Stack>}
+    <Stack gap="3" minW="0">
+    {passwordRequired && <Field.Root gap="1"><Field.Label>Account Password</Field.Label>
+      <PasswordInput required autoComplete="current-password" borderColor="gray.300" maxLength={256} value={password} onChange={(event) => setPassword(event.target.value)} disabled={saving} />
+      <Field.HelperText>Confirm your password to finish signing in securely.</Field.HelperText>
+    </Field.Root>}
+    <Field.Root gap="1"><Field.Label>Authenticator Code</Field.Label>
+      <Input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} borderColor="gray.300" placeholder="6-digit code" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} required disabled={saving || (enrolmentRequired && !setup)} />
+    </Field.Root>
+    {error && <Text role="alert" color="red.600">{error}</Text>}
+    <Button type="submit" variant="outline" bg="blue.700" color="white" loading={saving} loadingText="Verifying..." disabled={saving || (enrolmentRequired && !setup)}>{enrolmentRequired ? "Verify and Continue" : "Verify and Sign In"}</Button>
+    {onCancel && <Button type="button" variant="outline" borderColor="blue.700" color="blue.700" onClick={onCancel} disabled={saving}>{cancelLabel}</Button>}
+    </Stack>
+    </Grid>
+  </Stack></form>;
+}

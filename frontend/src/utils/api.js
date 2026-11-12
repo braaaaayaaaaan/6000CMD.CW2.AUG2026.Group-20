@@ -1,69 +1,88 @@
 import axios from "axios";
+import { currentSession, setSession } from "./session";
 
-export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-export const api = axios.create({ baseURL: API_BASE_URL });
+// Match the page hostname for host-only SameSite cookies (localhost vs 127.0.0.1).
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window !== "undefined" ? window.location.protocol + "//" + window.location.hostname + ":8000" : "http://127.0.0.1:8000")).replace(/\/+$/, "");
+export const api = axios.create({ baseURL: API_BASE_URL, withCredentials: true, timeout: 30000 });
+let csrfToken = "";
+let csrfPending = null;
+let refreshing = null;
+let restoring = null;
 
 export function clearSession() {
-  for (const key of ["accessToken", "refreshToken", "username", "id", "group"]) localStorage.removeItem(key);
-  window.dispatchEvent(new Event("dam-session-change"));
+  setSession(null, true);
 }
 
-let refreshing = null;
-function isPublicRequest(config) {
+async function ensureCsrf(force = false) {
+  if (force) csrfToken = "";
+  if (csrfToken) return csrfToken;
+  if (!csrfPending) csrfPending = axios.get(API_BASE_URL + "/api/account/csrf/", { withCredentials: true, timeout: 15000 })
+    .then(({ data }) => { csrfToken = data.csrfToken; return csrfToken; })
+    .finally(() => { csrfPending = null; });
+  return csrfPending;
+}
+
+function publicRequest(config) {
   const path = new URL(config.url, API_BASE_URL + "/").pathname;
-  return path.startsWith("/api/token/") || (path === "/users/" && config.method === "post");
+  return path.startsWith("/api/token/") || path.startsWith("/api/account/mfa/") ||
+    ["/api/account/csrf/", "/api/account/verify-email/", "/api/account/resend-verification/",
+      "/api/account/forgot-password/", "/api/account/reset-password/", "/api/logout/", "/api/logout-all/"].includes(path) ||
+    (path === "/users/" && config.method === "post");
 }
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
   if (new URL(config.url, API_BASE_URL + "/").origin !== new URL(API_BASE_URL).origin) {
     throw new Error("The API returned an unexpected address.");
   }
-  if (typeof window !== "undefined" && !isPublicRequest(config)) {
-    config.sessionUser ??= localStorage.getItem("id");
-    const token = localStorage.getItem("accessToken");
-    if (token) config.headers.Authorization = "Bearer " + token;
-    else delete config.headers.Authorization;
-  }
+  delete config.headers.Authorization;
+  if (!["get", "head", "options"].includes(config.method)) config.headers["X-CSRFToken"] = await ensureCsrf();
+  config.sessionUser ??= currentSession().id;
   return config;
 });
 
-api.interceptors.response.use((response) => response, async (error) => {
+api.interceptors.response.use((response) => {
+  if (response.data?.csrfToken) csrfToken = response.data.csrfToken;
+  return response;
+}, async (error) => {
   const config = error.config;
-  if (typeof window === "undefined" || error.response?.status !== 401 || !config || isPublicRequest(config)) throw error;
-  if (config.sessionUser !== localStorage.getItem("id")) throw new axios.CanceledError("Session changed.");
-  const refreshToken = localStorage.getItem("refreshToken");
-  if (config.sessionRetried || !refreshToken) {
-    clearSession();
-    throw error;
+  if (!config || typeof window === "undefined") throw error;
+  if (error.response?.status === 403 && String(error.response.data?.detail).startsWith("CSRF Failed") && !config.csrfRetried) {
+    config.csrfRetried = true;
+    await ensureCsrf(true);
+    return api(config);
   }
+  if (error.response?.status !== 401 || publicRequest(config)) throw error;
+  if (config.sessionUser !== currentSession().id) throw new axios.CanceledError("Session changed.");
+  if (config.sessionRetried) { clearSession(); throw error; }
   config.sessionRetried = true;
-  // Another request may already have refreshed the access token.
-  if (config.headers.Authorization === "Bearer " + localStorage.getItem("accessToken")) {
-    if (!refreshing) {
-      const rotate = async () => {
-        if (localStorage.getItem("id") !== config.sessionUser) throw new axios.CanceledError("Session changed.");
-        if (localStorage.getItem("refreshToken") !== refreshToken) {
-          if (localStorage.getItem("accessToken")) return;
-          throw new axios.CanceledError("Session changed.");
-        }
-        const { data } = await axios.post(API_BASE_URL + "/api/token/refresh/", { refresh: refreshToken }, { timeout: 15000 });
-        if (localStorage.getItem("refreshToken") !== refreshToken) throw new axios.CanceledError("Session changed.");
-        localStorage.setItem("accessToken", data.access);
-        localStorage.setItem("refreshToken", data.refresh);
-        window.dispatchEvent(new Event("dam-session-change"));
-      };
-      refreshing = (globalThis.navigator?.locks?.request
-        ? navigator.locks.request("dam-token-refresh", rotate) : rotate())
-        .catch((refreshError) => {
-          if (refreshError.response?.status === 401 && localStorage.getItem("refreshToken") === refreshToken) clearSession();
-          throw refreshError;
-        })
-        .finally(() => { refreshing = null; });
-    }
-    await refreshing;
+  if (!refreshing) {
+    const rotate = async () => {
+      if (config.sessionUser !== currentSession().id) throw new axios.CanceledError("Session changed.");
+      const { data } = await api.post("/api/token/refresh/");
+      setSession(data.user);
+    };
+    refreshing = (globalThis.navigator?.locks?.request ? navigator.locks.request("dam-token-refresh", rotate) : rotate())
+      .catch((refreshError) => { if (refreshError.response?.status === 401) clearSession(); throw refreshError; })
+      .finally(() => { refreshing = null; });
   }
+  await refreshing;
   return api(config);
 });
+
+export function restoreSession(force = false) {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (!force && currentSession().ready) return Promise.resolve();
+  if (!restoring) {
+    // Remove credentials left by the previous localStorage implementation.
+    try { for (const key of ["accessToken", "refreshToken", "username", "id", "group"]) localStorage.removeItem(key); } catch { /* storage may be disabled */ }
+    restoring = api.get("/api/account/me/")
+      .then(({ data }) => setSession(data.user))
+      .catch(() => setSession(null))
+      .finally(() => { restoring = null; });
+  }
+  return restoring;
+}
 
 export async function downloadAsset(asset, filename) {
   const { data } = await api.get("/assets/" + asset.id + "/media-url/");

@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Keep local validation from generating unrelated AGENTS.md files.
+  agentRules: false,
   /* config options here */
   images: {
     remotePatterns: [
@@ -12,7 +14,7 @@ const nextConfig = {
     ],
   },
 
-  allowedDevOrigins: ['192.168.0.216'],
+  allowedDevOrigins: ['127.0.0.1', '192.168.0.216'],
 
   experimental: {
     optimizePackageImports: ['@chakra-ui/react']

@@ -150,6 +150,60 @@ class EnvironmentParsingTests(SimpleTestCase):
         self.assertEqual(values["certificate"], str(base_dir / "certificate/prod-ca-2021.crt"))
 
 
+class DevelopmentEmailSettingsTests(SimpleTestCase):
+    def test_smtp_sender_defaults_to_login_and_preserves_an_explicit_sender(self):
+        environ = {
+            **os.environ,
+            "DJANGO_SETTINGS_MODULE": "backend.settings", "DJANGO_READ_DOT_ENV": "false",
+            "DJANGO_SECRET_KEY": "test-only-configuration-key", "DJANGO_DEBUG": "false",
+            "DB_NAME": "unused", "DB_USER": "unused", "DB_PASSWORD": "unused",
+            "DB_HOST": "unused.invalid", "DB_SSLMODE": "disable", "DB_SSLROOTCERT": "",
+            "AUTH_COOKIE_SECURE": "true", "AUTH_COOKIE_SAMESITE": "Lax",
+            "EMAIL_BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+            "EMAIL_HOST": "smtp.gmail.com", "EMAIL_PORT": "587",
+            "EMAIL_USE_TLS": "true", "EMAIL_USE_SSL": "false",
+            "EMAIL_HOST_USER": "sender@example.invalid", "EMAIL_HOST_PASSWORD": "test-only-app-password",
+        }
+        base_dir = Path(__file__).resolve().parent.parent
+        script = (
+            "import os; from django.conf import settings as s; "
+            "from django.core.mail import get_connection; "
+            "from django.core.mail.backends.smtp import EmailBackend; "
+            "assert s.DEFAULT_FROM_EMAIL == (os.environ['DEFAULT_FROM_EMAIL'] or s.EMAIL_HOST_USER); "
+            "backend = get_connection(); assert isinstance(backend, EmailBackend); "
+            "assert backend.host == 'smtp.gmail.com' and backend.port == 587; "
+            "assert backend.use_tls and not backend.use_ssl; "
+            "assert backend.username == s.EMAIL_HOST_USER and backend.password == s.EMAIL_HOST_PASSWORD"
+        )
+        for sender in ("", "approved-alias@example.invalid"):
+            result = subprocess.run(
+                [sys.executable, "-B", "-c", script], cwd=base_dir,
+                env={**environ, "DEFAULT_FROM_EMAIL": sender}, capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_console_email_is_allowed_only_in_debug_mode(self):
+        environ = {
+            **os.environ,
+            "DJANGO_READ_DOT_ENV": "false",
+            "DJANGO_SECRET_KEY": "test-only-configuration-key",
+            "DB_NAME": "unused", "DB_USER": "unused", "DB_PASSWORD": "unused",
+            "DB_HOST": "unused.invalid", "DB_SSLMODE": "disable", "DB_SSLROOTCERT": "",
+            "EMAIL_BACKEND": "django.core.mail.backends.console.EmailBackend",
+            "AUTH_COOKIE_SECURE": "true", "AUTH_COOKIE_SAMESITE": "Lax",
+        }
+        base_dir = Path(__file__).resolve().parent.parent
+        for debug, expected in (("true", 0), ("false", 1)):
+            result = subprocess.run(
+                [sys.executable, "-B", "-c", "import backend.settings"],
+                cwd=base_dir, env={**environ, "DJANGO_DEBUG": debug},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, expected, result.stderr)
+            if debug == "false":
+                self.assertIn("development-only", result.stderr)
+
+
 @override_settings(MEDIA_URL="/media/", X_FRAME_OPTIONS="DENY",
                    MEDIA_FRAME_ALLOWED_ORIGINS=["http://localhost:3000"])
 class MediaFramePolicyTests(SimpleTestCase):
