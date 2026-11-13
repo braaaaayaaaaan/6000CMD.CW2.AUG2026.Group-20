@@ -188,7 +188,7 @@ export default function PreviewAssetCardv2({
                     <Portal>
                       <Dialog.Backdrop />
                       <Dialog.Positioner>
-                        <Dialog.Content w="calc(100% - 2rem)">
+                        <Dialog.Content colorPalette="gray" w="calc(100% - 2rem)">
                           <Dialog.Header>
                             <Dialog.Title>Are You Sure?</Dialog.Title>
                           </Dialog.Header>
@@ -198,7 +198,7 @@ export default function PreviewAssetCardv2({
                               all of its versions from the system!
                             </Text>
                             {deleteError && (
-                              <Text role="alert" color="red.600">
+                              <Text role="alert" color="fg.error">
                                 {deleteError}
                               </Text>
                             )}
@@ -346,6 +346,7 @@ export default function PreviewAssetCardv2({
                               <Dialog.Backdrop />
                               <Dialog.Positioner>
                                 <Dialog.Content
+                                  colorPalette="gray"
                                   maxW="760px"
                                   w="calc(100% - 2rem)"
                                 >
@@ -353,7 +354,7 @@ export default function PreviewAssetCardv2({
                                     <Dialog.Title>
                                       {version.name}({version.version_no}).
                                       {version.file_type}
-                                      <Text fontSize="sm" color="gray.500">
+                                      <Text fontSize="sm" color="fg.muted">
                                         Version {version.version_no}
                                       </Text>
                                     </Dialog.Title>
@@ -365,7 +366,7 @@ export default function PreviewAssetCardv2({
                                       bg={
                                         version.file_type === "glb"
                                           ? "transparent"
-                                          : "gray.100"
+                                          : "blue.50"
                                       }
                                       h={{ base: "280px", md: "460px" }}
                                     >

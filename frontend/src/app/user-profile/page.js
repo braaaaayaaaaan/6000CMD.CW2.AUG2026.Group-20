@@ -96,7 +96,7 @@ export default function UserProfile() {
               <Text fontSize="sm" color="fg.muted">{session.group}</Text>
               <Dialog.Root role="alertdialog">
                 <Dialog.Trigger asChild>
-                  <Button variant="outline" bg="blue.700" color="white" mt="10px" width="180px" maxW="full" disabled={Boolean(saving)}>Log Out</Button>
+                  <Button variant="solid" mt="10px" width="180px" maxW="full" disabled={Boolean(saving)}>Log Out</Button>
                 </Dialog.Trigger>
                 <Portal>
                   <Dialog.Backdrop /><Dialog.Positioner>
@@ -105,7 +105,7 @@ export default function UserProfile() {
                       <Dialog.Body>You will be logged out. Are you sure?</Dialog.Body>
                       <Dialog.Footer>
                         <Dialog.ActionTrigger asChild><Button variant="outline">Cancel</Button></Dialog.ActionTrigger>
-                        <Button variant="outline" bg="blue.700" color="white" onClick={logout} disabled={Boolean(saving)} loading={saving === "logout"}>Log Out</Button>
+                        <Button variant="solid" onClick={logout} disabled={Boolean(saving)} loading={saving === "logout"}>Log Out</Button>
                       </Dialog.Footer>
                       <Dialog.CloseTrigger asChild><CloseButton size="sm" /></Dialog.CloseTrigger>
                     </Dialog.Content>
@@ -124,8 +124,8 @@ export default function UserProfile() {
             <Card.Root p="30px">
               {(!session.ready || resource.loading) && <Box role="status"><Spinner size="sm" mr="2" />Loading Profile…</Box>}
               {session.ready && session.authenticated && !session.id && <Text role="alert">Your profile ID is unavailable. Log out and sign in again.</Text>}
-              {resource.error && <Stack><Text role="alert" color="red.600">{resource.error}</Text><Button variant="outline" onClick={resource.refresh}>Retry Profile</Button></Stack>}
-              {saveError && <Text role="alert" color="red.600" mb="4">{saveError}</Text>}
+              {resource.error && <Stack><Text role="alert" color="fg.error">{resource.error}</Text><Button variant="outline" onClick={resource.refresh}>Retry Profile</Button></Stack>}
+              {saveError && <Text role="alert" color="fg.error" mb="4">{saveError}</Text>}
               <Tabs.Content value="info">
                 <Heading size="2xl">Personal Info</Heading>
                 <Box as="form" onSubmit={(event) => submit(event, "profile")} mt="20px" display="flex" flexDirection="column" gap="20px">
@@ -143,7 +143,7 @@ export default function UserProfile() {
                   {profile.email !== resource.data?.email && <Field.Root><Field.Label>Current Password</Field.Label>
                     <PasswordInput required autoComplete="current-password" value={profilePassword} onChange={(event) => setProfilePassword(event.target.value)} />
                     <Text fontSize="sm">Changing your email signs out all devices and requires verification of the new address.</Text></Field.Root>}
-                  <Button type="submit" variant="outline" bg="blue.700" color="white" mt="10px" width="150px" disabled={!ready || Boolean(saving)} loading={saving === "profile"} loadingText="Saving…">Save Changes</Button>
+                  <Button type="submit" variant="solid" mt="10px" width="150px" disabled={!ready || Boolean(saving)} loading={saving === "profile"} loadingText="Saving…">Save Changes</Button>
                 </Box>
               </Tabs.Content>
               <Tabs.Content value="security">
@@ -164,7 +164,7 @@ export default function UserProfile() {
                     </Field.Root>
                   ))}
                   <PasswordStrengthFeedback id="change-password-requirements" password={passwords.next} confirmation={passwords.confirm} />
-                  <Button type="submit" variant="outline" bg="blue.700" color="white" mt="10px" width="180px" disabled={!ready || Boolean(saving)} loading={saving === "password"} loadingText="Saving…">Update Password</Button>
+                  <Button type="submit" variant="solid" mt="10px" width="180px" disabled={!ready || Boolean(saving)} loading={saving === "password"} loadingText="Saving…">Update Password</Button>
                 </Box>
                 <AccountSecurity />
               </Tabs.Content>

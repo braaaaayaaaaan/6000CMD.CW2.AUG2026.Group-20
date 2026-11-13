@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Flex, Image, Tabs, Text } from "@chakra-ui/react";
+import { Button, Flex, Icon, Image, Tabs, Text } from "@chakra-ui/react";
 import { LuUserRound } from "react-icons/lu";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
@@ -29,7 +29,7 @@ export default function NavBar({ items = [] }) {
         <Tabs.List flexWrap="wrap">
           {items.map((item) => (
             <Tabs.Trigger key={item.title} value={item.title} asChild>
-              <Link href={item.page}>{item.icon}{item.title}</Link>
+              <Link href={item.page}><Icon asChild color="fg.muted" boxSize="1em" flexShrink="0" aria-hidden="true">{item.icon}</Icon>{item.title}</Link>
             </Tabs.Trigger>
           ))}
           <Tabs.Indicator unstyled />

@@ -17,10 +17,13 @@ class AccountSessionMiddleware(MiddlewareMixin):
                 logout(request)
         if request.path_info == "/admin/logout/" and request.method == "POST" and request.user.is_authenticated:
             request.security_logout_session = request.session.get("account_session")
+            request.security_logout_user = request.user
 
     def process_response(self, request, response):
         sid = getattr(request, "security_logout_session", None)
         if sid and response.status_code < 400:
             AccountSession.objects.filter(pk=sid).update(revoked=True)
+            from .security import event
+            event("logout", request.security_logout_user, request=request)
             clear_auth_cookies(response)
         return response

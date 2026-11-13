@@ -6,6 +6,7 @@ from user import account_views as accounts
 from asset.media import asset_file
 
 from user import views as user_views
+from user import monitoring
 from asset import views as asset_views
 from asset.views import (
     asset_usage_count,
@@ -20,8 +21,11 @@ router.register(r"users", user_views.UserViewSet)
 router.register(r"groups", user_views.GroupViewSet)
 router.register(r"assets", asset_views.AssetViewSet)
 router.register(r"tags", asset_views.TagViewSet)
+router.register(r"api/security/audit-events", monitoring.AuditEventViewSet, basename="security-audit")
+router.register(r"api/security/alerts", monitoring.SecurityAlertViewSet, basename="security-alert")
 
 urlpatterns = [
+    path("api/security/overview/", monitoring.SecurityOverview.as_view(), name="security-overview"),
     path("api/token/", accounts.NewTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/token/refresh/", accounts.NewTokenRefreshView.as_view(), name="token_refresh"),
     path("api/logout/", accounts.LogoutView.as_view(), name="logout"),

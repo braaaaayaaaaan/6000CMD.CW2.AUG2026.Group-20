@@ -1,6 +1,5 @@
 """Account workflows using Django tokens/hashers and standard TOTP/Fernet."""
 import base64
-import logging
 import secrets
 import time
 import uuid
@@ -32,7 +31,6 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import AccountSession, EmailIdentity, User
 from .permissions import account_allowed, application_role, requires_mfa
 
-audit = logging.getLogger("dam.audit")
 GENERIC_EMAIL_MESSAGE = "If an eligible account exists, an email will be sent."
 _mail_workers = ThreadPoolExecutor(max_workers=2, thread_name_prefix="account-mail")
 _mail_slots = BoundedSemaphore(100)
@@ -44,10 +42,9 @@ def profile(user):
             "mfa_enabled": user.mfa_enabled, "mfa_required": requires_mfa(user)}
 
 
-def event(name, user=None, target=None):
-    # Never log identifiers supplied by clients, tokens, codes, or SMTP exceptions.
-    audit.info("event=%s actor=%s target=%s", name, str(user.pk) if user else "anonymous",
-               str(target.pk) if target else "none")
+def event(name, user=None, target=None, **kwargs):
+    from .auditing import record_event
+    return record_event(name, user, target, **kwargs)
 
 
 def reserve_email(user):
@@ -115,14 +112,15 @@ def locked_out(user):
     return bool(user.auth_locked_until and user.auth_locked_until > timezone.now())
 
 
-def failed_attempt(user):
+def failed_attempt(user, log_event=True):
     if user.auth_locked_until and user.auth_locked_until <= timezone.now():
         user.auth_failures = 0
     user.auth_failures += 1
     if user.auth_failures >= settings.AUTH_MAX_FAILURES:
         user.auth_locked_until = timezone.now() + timedelta(seconds=settings.AUTH_LOCK_SECONDS)
     user.save(update_fields=["auth_failures", "auth_locked_until"])
-    event("authentication_failed", user)
+    if log_event:
+        event("authentication_failed", user)
 
 
 def clear_failures(user):
@@ -150,12 +148,12 @@ def password_user(username, password):
         user = User.objects.select_for_update().filter(username=username).first()
         if not user:
             make_password(password)
-            event("authentication_failed")
             return None
         if locked_out(user):
             return None
         if not user.check_password(password) or not user.is_active:
-            failed_attempt(user)
+            # The login endpoint records its single failure with attempted ID.
+            failed_attempt(user, log_event=False)
             return None
         # Only a completed login clears failures (not the password half of MFA).
         return user
@@ -224,7 +222,15 @@ def start_enrolment(user, replace=False):
 
 
 @sensitive_variables()
-def consume_factor(user, code, enrol=False):
+def consume_factor(user, code, enrol=False, log_verification=True):
+    accepted = _consume_factor(user, code, enrol)
+    if log_verification:
+        event("mfa_verification_succeeded" if accepted else "mfa_verification_failed", user)
+    return accepted
+
+
+@sensitive_variables()
+def _consume_factor(user, code, enrol=False):
     code = str(code).strip()
     if locked_out(user):
         return False
@@ -246,7 +252,7 @@ def consume_factor(user, code, enrol=False):
                 user.mfa_last_step = candidate
                 user.save(update_fields=["mfa_last_step"])
                 return True
-    failed_attempt(user)
+    failed_attempt(user, log_event=False)
     return False
 
 

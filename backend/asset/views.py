@@ -16,6 +16,7 @@ from .media import MISSING_FILE_MESSAGE, signed_media_url
 from .models import Asset, AssetSeries, Tags
 from .permissions import AssetPermission
 from .serializers import AssetSerializer, TagSerializer
+from user.security import event
 
 
 class StableOrderingFilter(filters.OrderingFilter):
@@ -97,11 +98,13 @@ class AssetViewSet(viewsets.ModelViewSet):
                 code = UniqueCodeGenerator.generate_code(prefix="A")
                 AssetSeries.objects.create(code=code)
                 number = 0
-            serializer.save(
+            asset = serializer.save(
                 code=code,
                 version_no=number + 1,
                 uploaded_by=self.request.user.get_username(),
             )
+            event("asset_uploaded", self.request.user, target=asset,
+                  metadata={"version_no": asset.version_no})
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -138,6 +141,9 @@ class AssetViewSet(viewsets.ModelViewSet):
                 serializer.instance = replacement
             else:
                 serializer.save()
+            event("asset_replaced" if "url" in serializer.validated_data else "asset_updated",
+                  request.user, target=serializer.instance,
+                  metadata={"version_no": serializer.instance.version_no})
         return Response(serializer.data)
 
     def perform_destroy(self, instance):
@@ -145,6 +151,7 @@ class AssetViewSet(viewsets.ModelViewSet):
             get_object_or_404(
                 AssetSeries.objects.select_for_update(), code=instance.code
             )
+            event("asset_deleted", self.request.user, target=instance)
             get_object_or_404(Asset, pk=instance.pk).delete()
 
     @action(detail=True, methods=["get"], url_path="media-url")
@@ -167,6 +174,19 @@ class TagViewSet(viewsets.ModelViewSet):
     permission_classes = [AssetPermission]
     filter_backends = [StableOrderingFilter]
     ordering_fields = ["title"]
+
+    def perform_create(self, serializer):
+        with transaction.atomic():
+            event("tag_created", self.request.user, target=serializer.save())
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            event("tag_updated", self.request.user, target=serializer.save())
+
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            event("tag_deleted", self.request.user, target=instance)
+            instance.delete()
 
 
 @api_view(["GET"])
@@ -192,6 +212,7 @@ def clear_all_tags(request, asset_id):
         get_object_or_404(AssetSeries.objects.select_for_update(), code=asset.code)
         asset = get_object_or_404(Asset, pk=asset_id)
         asset.tags.clear()
+        event("asset_updated", request.user, target=asset)
     return Response([])
 
 
@@ -229,4 +250,5 @@ def delete_asset_by_code(request, asset_code):
             raise NotFound("Asset not found.")
         assets.delete()
         series.delete()
+        event("asset_deleted", request.user, resource_id=asset_code, metadata={"version_count": count})
     return Response({"detail": "Deleted %s asset version(s)." % count})

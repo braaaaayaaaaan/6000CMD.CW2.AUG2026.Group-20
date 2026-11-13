@@ -70,15 +70,15 @@ export default function TagManagement() {
       <Stack>
         <Box display="flex" justifyContent="flex-end"><AddTag /></Box>
         {usage.error && <Stack><Text role="alert">Usage Counts: {usage.error}</Text><Button alignSelf="start" variant="outline" onClick={usage.refresh}>Retry Counts</Button></Stack>}
-        {actionError && !deleting && <Text role="alert" color="red.600">{actionError}</Text>}
+        {actionError && !deleting && <Text role="alert" color="fg.error">{actionError}</Text>}
         <Box overflowX="auto">
           <Table.Root variant="line">
             <Table.Header><Table.Row><Table.ColumnHeader>Tag Name</Table.ColumnHeader><Table.ColumnHeader textAlign="center">Usage Count</Table.ColumnHeader><Table.ColumnHeader textAlign="center">Actions</Table.ColumnHeader></Table.Row></Table.Header>
             <Table.Body>
               {loading ? (
-                <Table.Row><Table.Cell colSpan={3} textAlign="center"><Spinner size="lg" color="purple.500" aria-label="Loading Tags" /></Table.Cell></Table.Row>
+                <Table.Row><Table.Cell colSpan={3} textAlign="center"><Spinner size="lg" color="blue.700" aria-label="Loading Tags" /></Table.Cell></Table.Row>
               ) : error ? (
-                <Table.Row><Table.Cell colSpan={3} textAlign="center" color="red.500">
+                <Table.Row><Table.Cell colSpan={3} textAlign="center" color="fg.error">
                   <Text role="alert">{error}</Text><Button size="xs" variant="outline" onClick={refresh}>Retry Tags</Button>
                 </Table.Cell></Table.Row>
               ) : rows.length ? rows.map((tag) => (
@@ -113,11 +113,11 @@ export default function TagManagement() {
           if (!open && !busy.current) { setDeleting(null); setActionError(""); }
         }} closeOnEscape={!saving} closeOnInteractOutside={!saving} lazyMount unmountOnExit>
           <Portal><Dialog.Backdrop /><Dialog.Positioner>
-            <Dialog.Content w="calc(100% - 2rem)">
+            <Dialog.Content colorPalette="gray" w="calc(100% - 2rem)">
               <Dialog.Header><Dialog.Title>Delete Tag?</Dialog.Title></Dialog.Header>
               <Dialog.Body>
                 <Text>Remove “{deleting?.title}” and its associations? The assets will be kept.</Text>
-                {actionError && <Text role="alert" color="red.600">{actionError}</Text>}
+                {actionError && <Text role="alert" color="fg.error">{actionError}</Text>}
               </Dialog.Body>
               <Dialog.Footer>
                 <Dialog.ActionTrigger asChild><Button variant="outline" disabled={saving}>Cancel</Button></Dialog.ActionTrigger>

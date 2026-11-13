@@ -21,14 +21,20 @@ class LoginThrottleMiddleware(MiddlewareMixin):
 
 
 class AuditMiddleware(MiddlewareMixin):
+    def process_request(self, request):
+        from user.auditing import current_request
+        request.audit_context_token = current_request.set(request)
+
     def process_response(self, request, response):
-        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-            user = getattr(request, "user", None)
-            actor = getattr(request, "audit_actor", None) or (str(user.pk) if user and user.is_authenticated else "anonymous")
-            logging.getLogger("dam.audit").info(
-                "actor=%s method=%s path=%r status=%s", actor,
-                request.method, request.path_info, response.status_code,
-            )
+        from user.auditing import current_request, record_event
+        try:
+            if request.path_info.startswith("/admin/") and response.status_code == 403 and request.user.is_authenticated:
+                record_event("access_denied", request.user, request=request, resource_id="django_admin",
+                             metadata={"method": request.method})
+        finally:
+            token = getattr(request, "audit_context_token", None)
+            if token is not None:
+                current_request.reset(token)
         return response
 
 
