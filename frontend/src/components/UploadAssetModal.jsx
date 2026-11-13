@@ -160,6 +160,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded, defaultOpen =
         <Dialog.Backdrop />
         <Dialog.Positioner>
           <Dialog.Content
+            colorPalette="gray"
             as="form"
             onSubmit={submit}
             maxW="xl"
@@ -283,7 +284,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded, defaultOpen =
                   </Field.Root>
                 )}
                 {saveError && (
-                  <Text role="alert" color="red.600">
+                  <Text role="alert" color="fg.error">
                     {saveError}
                   </Text>
                 )}

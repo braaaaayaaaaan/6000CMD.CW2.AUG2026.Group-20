@@ -94,7 +94,7 @@ export const PasswordStrengthMeter = React.forwardRef(
               rounded='sm'
               data-selected={index < value ? '' : undefined}
               layerStyle='fill.subtle'
-              colorPalette='gray'
+              colorPalette='blue'
               _selected={{
                 colorPalette,
                 layerStyle: 'fill.solid',
@@ -161,7 +161,7 @@ export function PasswordStrengthFeedback({ id, password = '', confirmation = '',
 
   return (
     <Stack id={id} as='section' aria-label='Password Requirements' w='full' gap='3'
-      textAlign='left' bg='blue.50' color='gray.700' borderWidth='1px' borderColor='blue.100'
+      textAlign='left' bg='blue.50' color='fg' borderWidth='1px' borderColor='blue.100'
       borderRadius='md' p='4'>
       <HStack justify='space-between' gap='2' flexWrap='wrap'>
         <Text fontSize='sm' fontWeight='semibold' color='blue.700'>Password Requirements</Text>
@@ -173,7 +173,7 @@ export function PasswordStrengthFeedback({ id, password = '', confirmation = '',
       <Stack as='ul' gap='2' listStyleType='none' m='0' p='0'>
         {requirements.map(({ id: requirementId, label, met }) => {
           const Icon = met === true ? LuCheck : LuCircle
-          const color = met === false ? 'red.600' : met === true ? 'green.700' : 'gray.600'
+          const color = met === null ? 'fg.muted' : 'blue.700'
           const status = met === true ? 'Met' : met === false ? 'Not Met' : 'Pending'
           return (
             <HStack as='li' key={requirementId} gap='2' align='start' color={color} fontSize='xs'>
@@ -185,12 +185,12 @@ export function PasswordStrengthFeedback({ id, password = '', confirmation = '',
       </Stack>
       <Box borderTopWidth='1px' borderColor='blue.100' pt='2'>
         <Text fontSize='xs' fontWeight='medium' mb='1'>Also Checked When Saved</Text>
-        <Text fontSize='xs' color='gray.600'>Avoid common passwords and passwords similar to your name, username or email.</Text>
+        <Text fontSize='xs' color='fg.muted'>Avoid common passwords and passwords similar to your name, username or email.</Text>
       </Box>
       {password && strength < 4 && suggestions.length > 0 && (
         <Box>
           <Text fontSize='xs' fontWeight='medium'>Strength Tips (Optional)</Text>
-          <Text fontSize='xs' color='gray.600'>{suggestions.join(' · ')}</Text>
+          <Text fontSize='xs' color='fg.muted'>{suggestions.join(' · ')}</Text>
         </Box>
       )}
     </Stack>
@@ -200,10 +200,10 @@ export function PasswordStrengthFeedback({ id, password = '', confirmation = '',
 function getColorPalette(percent) {
   switch (true) {
     case percent < 33:
-      return { label: 'Low', colorPalette: 'red' }
+      return { label: 'Low', colorPalette: 'blue' }
     case percent < 66:
-      return { label: 'Medium', colorPalette: 'orange' }
+      return { label: 'Medium', colorPalette: 'blue' }
     default:
-      return { label: 'High', colorPalette: 'green' }
+      return { label: 'High', colorPalette: 'blue' }
   }
 }

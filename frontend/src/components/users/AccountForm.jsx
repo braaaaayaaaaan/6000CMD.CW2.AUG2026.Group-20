@@ -94,7 +94,7 @@ export default function AccountForm({ signup = false }) {
             return (
               <Field.Root key={field} gridColumn={signup && field !== "first_name" && field !== "last_name" ? "1 / -1" : undefined} gap={signup ? "1" : undefined} mt={!signup && field === "password" ? 4 : undefined}>
                 <Field.Label>{label}</Field.Label>
-                <Component name={field} type={type} borderColor="gray.300" autoComplete={autoComplete} required disabled={!ready || saving}
+                <Component name={field} type={type} borderColor="border.emphasized" autoComplete={autoComplete} required disabled={!ready || saving}
                   aria-describedby={signup && type === "password" ? "signup-password-requirements" : undefined}
                   minLength={signup && type === "password" ? 12 : undefined}
                   maxLength={signup && type === "password" ? 256 : undefined}
@@ -107,10 +107,10 @@ export default function AccountForm({ signup = false }) {
           })}
           </Grid>
           {signup && <PasswordStrengthFeedback id="signup-password-requirements" password={values.password1} confirmation={values.password2} compact />}
-          <Button type="submit" marginTop={signup ? "0" : "30px"} variant="outline" bg="blue.700" color="white" loading={saving} disabled={!ready || saving} loadingText={signup ? "Creating Account…" : "Logging In…"}>
+          <Button type="submit" marginTop={signup ? "0" : "30px"} variant="solid" loading={saving} disabled={!ready || saving} loadingText={signup ? "Creating Account…" : "Logging In…"}>
             {signup ? "Sign Up" : "Login"}
           </Button>
-          {error && <Fieldset.ErrorText role="alert" mt={signup ? 3 : undefined}>{error}</Fieldset.ErrorText>}
+          {error && <Fieldset.ErrorText role="alert" color="red.600" mt={signup ? 3 : undefined}>{error}</Fieldset.ErrorText>}
           <Box fontSize="sm">
             <Link variant="underline" href={signup ? "/login" : "/signup"}>
               {signup ? "Already Have An Account? Log In!" : "Don’t Have An Account? Sign Up!"}

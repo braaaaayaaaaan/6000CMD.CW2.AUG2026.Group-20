@@ -44,7 +44,8 @@ body {
 
 :root{
   background: white;
-  color: black;
+  color: var(--chakra-colors-blue-950, #14204a);
+  color-scheme: light;
 }
 
 .w-color-sketch {

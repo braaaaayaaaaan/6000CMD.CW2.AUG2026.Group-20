@@ -195,7 +195,7 @@ export default function AssetCard({ uploadsView = false, openUpload = false }) {
         </Flex>
       </Flex>
       {resource.error && <Stack align="start" gap="3" p="5" borderWidth="1px" rounded="lg">
-        <Text role="alert">{resource.error}</Text><Button size="sm" variant="outline" onClick={resource.refresh}>Try Again</Button>
+        <Text role="alert" color="fg.error">{resource.error}</Text><Button size="sm" variant="outline" onClick={resource.refresh}>Try Again</Button>
       </Stack>}
       {resource.pollError && <Text role="status" fontSize="sm" color="fg.muted">{resource.pollError}</Text>}
       {resource.loading && !assets.length && <Flex role="status" align="center" justify="center" gap="3" py="12"><Spinner size="sm" />Loading {managingUploads ? "Uploads" : "Library"}…</Flex>}
@@ -232,7 +232,7 @@ export default function AssetCard({ uploadsView = false, openUpload = false }) {
         })}
       </Stack> : <Grid templateColumns={{ base: "minmax(0, 1fr)", sm: "repeat(2, minmax(0, 1fr))", lg: "repeat(3, minmax(0, 1fr))", xl: "repeat(4, minmax(0, 1fr))" }} gap="5" aria-busy={resource.loading}>
         {assets.map((asset) => <Card.Root key={asset.id} minW="0" overflow="hidden" variant="elevated">
-          <Box aspectRatio={4 / 3} bg="gray.100" borderBottomWidth="1px" p="2"><PreviewAssetMedia asset={asset} compact /></Box>
+          <Box aspectRatio={4 / 3} bg="blue.50" borderBottomWidth="1px" p="2"><PreviewAssetMedia asset={asset} compact /></Box>
           <Card.Body p="4" gap="2">
             <Flex gap="2" align="start" justify="space-between"><Card.Title fontSize="md" lineClamp={2} title={asset.name}>{asset.name}</Card.Title><Badge variant="subtle" flexShrink="0">{asset.file_type.toUpperCase()}</Badge></Flex>
             <Text fontSize="xs" color="fg.muted">{Number(asset.file_size).toFixed(2)} MB · Version {asset.version_no}</Text>

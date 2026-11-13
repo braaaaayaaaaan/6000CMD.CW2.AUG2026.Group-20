@@ -70,3 +70,52 @@ class EmailIdentity(models.Model):
     # A new table avoids a destructive uniqueness migration over legacy emails.
     user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
     email = models.EmailField(unique=True)
+
+
+class AuditEvent(models.Model):
+    """Selected application events. No request payloads or authentication material."""
+
+    actor = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_events")
+    actor_reference = models.CharField(max_length=36, blank=True)
+    account_identifier = models.CharField(max_length=150, blank=True)
+    event_type = models.CharField(max_length=64, db_index=True)
+    category = models.CharField(max_length=32, db_index=True)
+    resource_type = models.CharField(max_length=32, blank=True)
+    resource_id = models.CharField(max_length=100, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=512, blank=True)
+    outcome = models.CharField(max_length=16, default="success")
+    severity = models.CharField(max_length=16, default="info")
+    metadata = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ["-timestamp", "-id"]
+        indexes = [
+            models.Index(fields=["event_type", "account_identifier", "timestamp"], name="audit_account_window"),
+            models.Index(fields=["event_type", "actor", "timestamp"], name="audit_actor_window"),
+        ]
+
+
+class SecurityAlert(models.Model):
+    alert_type = models.CharField(max_length=64)
+    affected_user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="security_alerts")
+    account_identifier = models.CharField(max_length=150, blank=True)
+    # Internal hash identifies a subject without using raw client input as a key.
+    subject_key = models.CharField(max_length=64)
+    bucket_start = models.DateTimeField()
+    severity = models.CharField(max_length=16)
+    description = models.CharField(max_length=300)
+    event_count = models.PositiveIntegerField()
+    window_seconds = models.PositiveIntegerField()
+    window_started_at = models.DateTimeField()
+    first_detected_at = models.DateTimeField(auto_now_add=True)
+    last_detected_at = models.DateTimeField()
+    status = models.CharField(max_length=16, choices=[("open", "Open"), ("resolved", "Resolved")], default="open", db_index=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="resolved_security_alerts")
+    metadata = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ["-last_detected_at", "-id"]
+        constraints = [models.UniqueConstraint(fields=["alert_type", "subject_key", "bucket_start"], name="unique_security_alert_bucket")]

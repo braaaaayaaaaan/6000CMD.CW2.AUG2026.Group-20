@@ -51,7 +51,7 @@ export default function PreviewAssetModal({
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          <Dialog.Content maxW={ready ? "6xl" : "2xl"} w="calc(100% - 2rem)" maxH="calc(100dvh - 2rem)">
+          <Dialog.Content colorPalette="gray" maxW={ready ? "6xl" : "2xl"} w="calc(100% - 2rem)" maxH="calc(100dvh - 2rem)">
             <Dialog.Header pr="12" pb="2">
               <Dialog.Title fontSize="xl" fontWeight="semibold" overflowWrap="anywhere">{asset.name}</Dialog.Title>
             </Dialog.Header>
@@ -74,7 +74,7 @@ export default function PreviewAssetModal({
                     rounded="md"
                     minW="0"
                     h={{ base: "260px", md: "420px", xl: "520px" }}
-                    bg={asset.file_type === "glb" ? "transparent" : "gray.100"}
+                    bg={asset.file_type === "glb" ? "transparent" : "blue.50"}
                   >
                     <PreviewAssetMedia
                       asset={asset}

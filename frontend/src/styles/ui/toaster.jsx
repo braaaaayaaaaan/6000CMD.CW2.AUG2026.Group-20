@@ -51,7 +51,7 @@ export const Toaster = () => {
             rounded='xl' borderWidth='1px' boxShadow='md' p='3'
             css={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none !important', transition: 'none !important' } }}>
             {toast.type === 'loading' ? (
-              <Spinner size='sm' color='blue.solid' css={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }} />
+              <Spinner size='sm' color='white' css={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }} />
             ) : (
               <Toast.Indicator />
             )}

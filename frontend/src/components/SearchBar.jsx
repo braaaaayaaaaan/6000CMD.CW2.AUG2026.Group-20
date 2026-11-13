@@ -11,7 +11,7 @@ export default function SearchBar() {
   return (
     <Flex flex={{ base: "1 0 100%", md: "1" }} order={{ base: 3, md: 0 }} justify="center" minW="0">
       <InputGroup endElement={<LuSearch />} width="full" maxW="lg">
-        <Input color="black" variant="outline" borderColor="gray.700/20" aria-label="Search Assets" placeholder="Search For Assets" value={keyword}
+        <Input variant="outline" aria-label="Search Assets" placeholder="Search For Assets" value={keyword}
           onChange={(event) => dispatch(setKeyword(event.target.value))} />
       </InputGroup>
     </Flex>
