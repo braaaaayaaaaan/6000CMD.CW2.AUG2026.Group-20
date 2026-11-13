@@ -683,7 +683,11 @@ def validate_glb(key):
             ],
             GLB_VALIDATION_TIMEOUT_SECONDS,
             stdin=original,
-            env={"NODE_OPTIONS": ""},
+            # Node's crypto initialization needs SystemRoot on Windows.
+            env={"NODE_OPTIONS": "", **(
+                {"SystemRoot": os.environ["SystemRoot"]}
+                if os.name == "nt" and "SystemRoot" in os.environ else {}
+            )},
         )
     if exit_code != 0 or diagnostics:
         raise RuntimeError("GLB validation could not finish.")
@@ -793,7 +797,8 @@ def copy_private_file(source, target_key):
         temporary = Path(storage.path(temporary_key))
         if not same_file_contents(source, temporary):
             raise OSError("The private file copy could not be verified.")
-        with temporary.open("rb") as complete:
+        # Windows requires write access for fsync; this also works on macOS.
+        with temporary.open("r+b") as complete:
             os.fsync(complete.fileno())
         os.replace(temporary, target)
     finally:
