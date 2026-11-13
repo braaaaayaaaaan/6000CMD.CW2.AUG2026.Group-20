@@ -1,5 +1,6 @@
 import json
 import tempfile
+from pathlib import Path
 from datetime import datetime, timedelta, timezone as dt_timezone
 from unittest.mock import patch
 
@@ -14,6 +15,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from asset.models import Asset, Tags
+from asset.files import process_uploads
 from asset.test_security import image_bytes
 from .auditing import RULES, current_request, record_event
 from .models import AuditEvent, SecurityAlert, User
@@ -34,7 +36,8 @@ class MonitoringTests(TestCase):
         self.client = APIClient()
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        override = override_settings(MEDIA_ROOT=temporary.name)
+        override = override_settings(MEDIA_ROOT=str(Path(temporary.name) / "legacy"),
+                                     ASSET_PRIVATE_ROOT=str(Path(temporary.name) / "private"))
         override.enable()
         self.addCleanup(override.disable)
 
@@ -43,10 +46,14 @@ class MonitoringTests(TestCase):
         self.sign_in(user)
         return user
 
-    def upload(self):
+    def upload(self, publish=False):
         response = self.client.post("/assets/", {"name": "Example", "description": "Audit fixture",
             "url": SimpleUploadedFile("image.png", image_bytes())}, format="multipart")
         self.assertEqual(response.status_code, 201, response.data)
+        if publish:
+            with self.captureOnCommitCallbacks(execute=True):
+                self.assertEqual(process_uploads(), 1)
+            return self.client.get(f"/assets/{response.data['id']}/").data
         return response.data
 
     def download(self, path, **headers):
@@ -111,7 +118,16 @@ class MonitoringTests(TestCase):
         user = self.as_admin()
         asset = self.upload()
         path = f"/assets/{asset['id']}/"
-        self.assertEqual(self.client.patch(path, {"url": SimpleUploadedFile("new.png", image_bytes())}, format="multipart").status_code, 200)
+        replaced = self.client.patch(path, {"url": SimpleUploadedFile("new.png", image_bytes())}, format="multipart")
+        self.assertEqual(replaced.status_code, 200)
+        self.assertNotEqual(replaced.data["id"], asset["id"])
+        self.assertEqual(replaced.data["version_no"], 2)
+        replacement_event = AuditEvent.objects.get(event_type="asset_replaced", actor=user)
+        self.assertEqual(replacement_event.resource_id, replaced.data["id"])
+        self.assertEqual(replacement_event.metadata, {"version_no": 2})
+        self.assertEqual(Asset.objects.get(pk=asset["id"]).version_no, 1)
+        self.assertEqual(self.client.patch(path, {"name": "Renamed"}, format="json").status_code, 200)
+        self.assertEqual(AuditEvent.objects.get(event_type="asset_updated", actor=user).resource_id, asset["id"])
         self.assertEqual(self.client.delete(path).status_code, 204)
         tag = self.client.post("/tags/", {"title": "New"}, format="json")
         self.assertEqual(tag.status_code, 201)
@@ -124,6 +140,12 @@ class MonitoringTests(TestCase):
     def test_download_only_after_authorised_file_response_and_not_url_issue_head_or_preview(self):
         user = self.as_admin()
         asset = self.upload()
+        self.assertIsNone(asset["url"])
+        self.assertEqual(self.client.get(f"/assets/{asset['id']}/media-url/").status_code, 404)
+        self.assertFalse(AuditEvent.objects.filter(event_type__in=["asset_previewed", "asset_downloaded"]).exists())
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(process_uploads(), 1)
+        asset = self.client.get(f"/assets/{asset['id']}/").data
         path = asset["url"].replace("http://testserver", "")
         self.client.get(f"/assets/{asset['id']}/media-url/")
         response = self.client.head(path + "&download=1")
@@ -216,7 +238,7 @@ class MonitoringTests(TestCase):
 
     def test_denied_signed_link_does_not_create_successful_download(self):
         self.as_admin()
-        asset = self.upload()
+        asset = self.upload(publish=True)
         path = asset["url"].replace("http://testserver", "")
         other = self.user("other")
         self.client = APIClient()
@@ -252,7 +274,7 @@ class MonitoringTests(TestCase):
 
     def test_bulk_download_detection_real_flow_and_preview_exclusion(self):
         user = self.as_admin()
-        asset = self.upload()
+        asset = self.upload(publish=True)
         path = asset["url"].replace("http://testserver", "")
         for _ in range(21):
             self.download(path)

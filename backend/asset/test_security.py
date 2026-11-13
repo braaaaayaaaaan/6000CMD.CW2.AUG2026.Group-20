@@ -19,7 +19,14 @@ from rest_framework.test import APIClient
 
 from user import test_security as accounts
 from backend.middleware import RedactSignedMediaTokens
-from .files import file_digest, validate_file
+from .files import (
+    claim_processing_job,
+    file_digest,
+    process_uploads,
+    promote_asset,
+    validate_glb,
+    validate_video,
+)
 from .models import Asset
 
 
@@ -71,7 +78,7 @@ class AssetSecurityTests(TestCase):
         cache.clear()
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.settings_override = override_settings(MEDIA_ROOT=temporary.name)
+        self.settings_override = override_settings(MEDIA_ROOT=str(Path(temporary.name) / "legacy"), ASSET_PRIVATE_ROOT=str(Path(temporary.name) / "private"))
         self.settings_override.enable()
         self.addCleanup(self.settings_override.disable)
         self.root = Path(temporary.name)
@@ -79,10 +86,26 @@ class AssetSecurityTests(TestCase):
         self.editor = self.user("editor", role="Editor")
         self.sign_in(self.editor)
 
-    def upload(self, content=None, filename="image.png", **values):
-        return self.client.post("/assets/", {"name": "Example", "description": "Security fixture",
+    def upload(self, content=None, filename="image.png", publish=True, **values):
+        response = self.client.post("/assets/", {"name": "Example", "description": "Security fixture",
             "url": SimpleUploadedFile(filename, content if content is not None else image_bytes(), content_type="text/plain"),
             **values}, format="multipart")
+        if publish and response.status_code == 201:
+            response.data = self.approve(response.data)
+        return response
+
+    def approve(self, data):
+        # These tests exercise authenticated delivery. Type-specific worker tests
+        # below exercise real validation separately from structural media fixtures.
+        job = claim_processing_job()
+        self.assertIsNotNone(job)
+        self.assertEqual(str(job.pk), data["id"])
+        with patch("asset.files.check_asset_security", return_value=True):
+            with self.captureOnCommitCallbacks(execute=True):
+                self.assertTrue(promote_asset(job))
+        response = self.client.get(f"/assets/{job.pk}/")
+        self.assertEqual(response.status_code, 200, response.data)
+        return response.data
 
     def path(self, data):
         return data["url"].split("http://testserver", 1)[-1]
@@ -92,6 +115,55 @@ class AssetSecurityTests(TestCase):
             return b"".join(response.streaming_content)
         finally:
             response.close()
+
+    def test_quarantine_processing_preserves_digest_and_requires_approval(self):
+        result = self.upload(publish=False)
+        self.assertEqual(result.status_code, 201, result.data)
+        self.assertEqual(result.data["processing_status"], "pending")
+        self.assertIsNone(result.data["url"])
+        asset = Asset.objects.get(pk=result.data["id"])
+        original_key = asset.url.name
+        self.assertEqual(self.client.get(f"/assets/{asset.pk}/media-url/").status_code, 404)
+        # Run the real image worker, including its isolated validation subprocess.
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(process_uploads(), 1)
+        asset.refresh_from_db()
+        self.assertTrue(asset.is_published, asset.processing_detail)
+        self.assertEqual(asset.sha256, hashlib.sha256(image_bytes()).hexdigest())
+        self.assertFalse(asset.url.storage.exists(original_key))
+        data = self.client.get(f"/assets/{asset.pk}/").data
+        self.assertEqual(self.read(self.client.get(self.path(data))), image_bytes())
+
+    def test_changed_quarantine_file_cannot_publish_with_the_original_digest(self):
+        result = self.upload(publish=False)
+        asset = Asset.objects.get(pk=result.data["id"])
+        original_key = asset.url.name
+        Path(asset.url.path).write_bytes(image_bytes("JPEG"))
+        with patch("asset.files.check_asset_security", return_value=True):
+            self.assertEqual(process_uploads(), 1)
+        asset.refresh_from_db()
+        self.assertEqual(asset.processing_status, Asset.ProcessingStatus.REJECTED)
+        self.assertEqual(asset.url.name, original_key)
+        self.assertEqual(asset.sha256, hashlib.sha256(image_bytes()).hexdigest())
+        self.assertEqual(list(self.root.rglob("approved/*/*")), [])
+
+    def test_media_workers_validate_random_storage_keys_without_upload_extensions(self):
+        fixtures = (
+            ("model.glb", glb_bytes(), validate_glb,
+             {"valid": True, "warnings": 0, "warningCodes": []}),
+            ("video.mp4", mp4_structure(), validate_video,
+             {"format": {"format_name": "mov,mp4", "duration": "1"},
+              "streams": [{"codec_type": "video", "codec_name": "h264",
+                           "width": 64, "height": 64}]}),
+        )
+        for filename, content, validator, outcome in fixtures:
+            with self.subTest(filename=filename):
+                result = self.upload(content, filename, publish=False)
+                self.assertEqual(result.status_code, 201, result.data)
+                asset = Asset.objects.get(pk=result.data["id"])
+                with patch("asset.files.shutil.which", return_value="/usr/bin/true"):
+                    with patch("asset.files.run_validation_process", return_value=(0, outcome, False)):
+                        self.assertTrue(validator(asset.url.name))
 
     def test_upload_and_authenticated_previews_downloads_and_ranges(self):
         for name, content, mime in (("image.png", image_bytes(), "image/png"),
@@ -171,7 +243,7 @@ class AssetSecurityTests(TestCase):
         self.editor.save(update_fields=["is_active"])
         self.assertEqual(self.client.get(path).status_code, 401)
 
-    def test_replacement_invalidates_old_link_but_historical_versions_still_work(self):
+    def test_replacement_creates_a_new_version_and_preserves_historical_links(self):
         first = self.upload().data
         old_path = self.path(first)
         second = self.upload(image_bytes("JPEG"), "new.jpg", code=first["code"])
@@ -184,7 +256,9 @@ class AssetSecurityTests(TestCase):
             response.close()
         result = self.client.patch(f"/assets/{first['id']}/", {"url": SimpleUploadedFile("replace.jpg", image_bytes("JPEG"))}, format="multipart")
         self.assertEqual(result.status_code, 200, result.data)
-        self.assertEqual(self.client.get(old_path).status_code, 403)
+        self.assertNotEqual(result.data["id"], first["id"])
+        result.data = self.approve(result.data)
+        self.assertEqual(self.read(self.client.get(old_path)), image_bytes())
         self.assertEqual(self.read(self.client.get(self.path(result.data))), image_bytes("JPEG"))
         self.assertNotEqual(first["sha256"], result.data["sha256"])
 
@@ -234,7 +308,7 @@ class AssetSecurityTests(TestCase):
         result = self.upload(glb_bytes(), "model.glb").data
         asset = Asset.objects.get(pk=result["id"])
         original = asset.url.name
-        legacy = f"approved/{asset.pk.hex}/old-storage-key"
+        legacy = f"approved/{asset.pk.hex}/{'0' * 32}"
         Asset.objects.filter(pk=asset.pk).update(url=legacy)
         broken = self.client.get(f"/assets/{asset.pk}/").data
         self.assertEqual(self.client.get(self.path(broken)).status_code, 404)
@@ -282,6 +356,25 @@ class AssetSecurityTests(TestCase):
         second.refresh_from_db()
         self.assertEqual(first.url.name, first_path)
         self.assertTrue(second.url.storage.exists(second.url.name))
+        call_command("verify_asset_files", stdout=io.StringIO())
+
+    def test_repair_legacy_original_requires_processing_before_access(self):
+        asset = Asset.objects.get(pk=self.upload().data["id"])
+        original = Path(asset.url.path)
+        legacy = self.root / "legacy" / "uploads" / "original.png"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_bytes(original.read_bytes())
+        original.unlink()
+        call_command("repair_asset_paths", apply=True, stdout=io.StringIO())
+        asset.refresh_from_db()
+        self.assertTrue(asset.url.name.startswith("quarantine/"))
+        self.assertEqual(asset.processing_status, "pending")
+        self.assertIsNone(self.client.get(f"/assets/{asset.pk}/").data["url"])
+        self.assertEqual(self.client.get(f"/assets/{asset.pk}/media-url/").status_code, 404)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(process_uploads(), 1)
+        asset.refresh_from_db()
+        self.assertTrue(asset.is_published, asset.processing_detail)
         call_command("verify_asset_files", stdout=io.StringIO())
 
     def test_repair_preserves_a_concurrent_file_replacement(self):

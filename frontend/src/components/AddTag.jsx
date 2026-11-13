@@ -40,7 +40,7 @@ export default function AddTag() {
           <Dialog.Header><Dialog.Title>Add New Tag</Dialog.Title></Dialog.Header>
           <Dialog.Body>
             <Field.Root><Field.Label>Tag Name</Field.Label>
-              <Input placeholder="Enter your tag name" required maxLength={50} value={title} onChange={(event) => setTitle(event.target.value)} disabled={saving} />
+              <Input placeholder="Enter Your Tag Name" required maxLength={50} value={title} onChange={(event) => setTitle(event.target.value)} disabled={saving} />
             </Field.Root>
             {error && <Text role="alert" color="fg.error">{error}</Text>}
           </Dialog.Body>

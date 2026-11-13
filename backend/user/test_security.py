@@ -1,5 +1,8 @@
 import time
+import uuid
 from datetime import timedelta
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from urllib.parse import parse_qs
 from unittest.mock import patch
 
@@ -10,12 +13,14 @@ from django.contrib.auth.hashers import make_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core import mail, signing
 from django.core.cache import cache
+from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from asset.media import file_binding, signed_media_url
 from asset.models import Asset
 from .models import AccountSession, User
 from .security import decrypt_secret, send_verification
@@ -79,6 +84,19 @@ class AccountSecurityTests(TestCase):
 
     def mail_values(self):
         return {key: value[0] for key, value in parse_qs(mail.outbox[-1].body.split("#", 1)[1].split()[0]).items()}
+
+    def published_asset(self, user):
+        directory = self.enterContext(TemporaryDirectory())
+        self.enterContext(override_settings(ASSET_PRIVATE_ROOT=directory))
+        content = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + b"\x00" * 16
+        asset = Asset.objects.create(
+            name="test", description="test", uploaded_by=user.username,
+            file_type="png", file_size=len(content),
+            url=f"approved/{uuid.uuid4().hex}/{uuid.uuid4().hex}",
+            processing_status=Asset.ProcessingStatus.APPROVED,
+        )
+        asset.url.storage.save(asset.url.name, ContentFile(content))
+        return asset
 
     def test_signup_requires_email_and_cannot_elevate_itself(self):
         data = {"username": "new", "password1": PASSWORD, "password2": PASSWORD}
@@ -288,11 +306,10 @@ class AccountSecurityTests(TestCase):
         session["account_session"] = str(record.pk)
         session.save()
         self.assertEqual(self.client.get("/assets/").status_code, 401)
-        asset = Asset.objects.create(name="test", description="test", uploaded_by=user.username,
-                                     file_type="png", file_size=1, url="uploads/not-written.png")
+        asset = self.published_asset(user)
         media_token = signing.dumps({"asset": str(asset.pk), "user": str(user.pk),
                                      "version": user.token_version, "auth": user.get_session_auth_hash(),
-                                     "sid": str(record.pk)}, salt="asset-media")
+                                     "sid": str(record.pk), "file": file_binding(asset)}, salt="asset-media")
         self.assertEqual(APIClient().get(reverse("asset-file", args=[asset.pk]), {"token": media_token}).status_code, 401)
 
     def test_totp_and_recovery_codes_are_single_use(self):
@@ -528,13 +545,46 @@ class AccountSecurityTests(TestCase):
     def test_signed_media_is_denied_after_logout_and_for_unverified_accounts(self):
         user = self.user()
         self.sign_in(user)
-        asset = Asset.objects.create(name="test", description="test", uploaded_by=user.username,
-                                     file_type="png", file_size=1, url="uploads/not-written.png")
+        asset = self.published_asset(user)
         response = self.client.get(f"/assets/{asset.pk}/")
+        self.assertEqual(response.status_code, 200, response.data)
         url = response.data["url"]
         path = url.split("http://testserver", 1)[-1]
+        media_client = self.client
+        media = media_client.get(path)
+        self.assertEqual(media.status_code, 200)
+        self.assertTrue(b"".join(media.streaming_content).startswith(b"\x89PNG"))
+        media.close()
+        User.objects.filter(pk=user.pk).update(email_verified=False)
+        self.assertEqual(media_client.get(path).status_code, 401)
+        User.objects.filter(pk=user.pk).update(email_verified=True)
         self.client.post("/api/logout/")
-        self.assertEqual(self.client.get(path).status_code, 401)
+        self.assertEqual(media_client.get(path).status_code, 401)
+
+    def test_signed_media_is_bound_to_the_approved_file(self):
+        user = self.user()
+        self.sign_in(user)
+        asset = self.published_asset(user)
+        response = self.client.get(f"/assets/{asset.pk}/")
+        self.assertEqual(response.status_code, 200, response.data)
+        path = response.data["url"].split("http://testserver", 1)[-1]
+        media_client = self.client
+        Asset.objects.filter(pk=asset.pk).update(sha256="f" * 64)
+        self.assertEqual(media_client.get(path).status_code, 403)
+        Asset.objects.filter(pk=asset.pk).update(sha256=asset.sha256)
+        Asset.objects.filter(pk=asset.pk).update(
+            url=f"approved/{uuid.uuid4().hex}/{uuid.uuid4().hex}"
+        )
+        self.assertEqual(media_client.get(path).status_code, 403)
+        Asset.objects.filter(pk=asset.pk).update(
+            url=asset.url.name, processing_status=Asset.ProcessingStatus.PENDING
+        )
+        self.assertEqual(media_client.get(path).status_code, 404)
+        asset.refresh_from_db()
+        self.assertEqual(
+            signed_media_url(asset, SimpleNamespace(user=user)),
+            {"url": None, "url_expires_at": None},
+        )
 
     @override_settings(ACCOUNT_ALLOWED_EMAIL_DOMAINS=["university.example"])
     def test_optional_admission_domain_setting_is_explicit(self):

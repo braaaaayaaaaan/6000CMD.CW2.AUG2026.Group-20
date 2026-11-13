@@ -17,9 +17,9 @@ export default function PreviewVideoAsset({ assetName, assetURL, h, w, controls 
       playback.current.src = assetURL;
     }
   }
-  return (
-    <video src={assetURL} crossOrigin="use-credentials" aria-label={assetName || "Asset video"} controls={controls} playsInline preload="metadata"
+  return assetURL ? (
+    <video src={assetURL} crossOrigin="use-credentials" aria-label={assetName || "Asset Video"} controls={controls} playsInline preload="metadata"
       onTimeUpdate={remember} onPlay={remember} onPause={remember} onLoadedMetadata={restore} onError={onError}
       style={{ display: "block", width: w, height: h, maxWidth: "100%", objectFit: "contain", borderRadius: "10px" }} />
-  );
+  ) : null;
 }

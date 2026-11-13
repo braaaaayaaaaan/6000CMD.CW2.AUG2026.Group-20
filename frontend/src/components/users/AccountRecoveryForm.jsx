@@ -42,7 +42,7 @@ export default function AccountRecoveryForm({ mode }) {
     return () => window.removeEventListener("hashchange", restartFromLink);
   }, [mode]);
   const verifying = verification && Boolean(link.token);
-  const title = mode === "forgot-password" ? "Forgot Password" : mode === "reset-password" ? "Reset password" : "Verify your email";
+  const title = mode === "forgot-password" ? "Forgot Password" : mode === "reset-password" ? "Reset Password" : "Verify Your Email";
   const fields = mode === "reset-password" ? ["password1", "password2"] : verification ? [] : ["email"];
   async function submit(event, resend = false) {
     event.preventDefault();
@@ -71,7 +71,7 @@ export default function AccountRecoveryForm({ mode }) {
     <Heading mb={challenge ? "3" : "6"} size={themedCard ? "2xl" : undefined} color={themedCard ? "blue.700" : undefined} fontWeight="bold">{challenge ? "Email Verified" : title}</Heading>
     {challenge ? <MfaChallenge challenge={challenge.challenge} enrolmentRequired={challenge.enrolment_required} passwordRequired={challenge.password_required}
       onComplete={(data) => { setSession(data.user, true); router.replace("/editor/home"); }} onCancel={() => router.replace("/login")} /> : <form method="post" onSubmit={submit}><Stack gap="4">
-      {!ready && <Text role="status">Loading secure form...</Text>}
+      {!ready && <Text role="status">Loading Secure Form...</Text>}
       {ready && verification && !verified && <Text color="fg.muted" fontSize="xs" lineHeight="tall" textWrap="balance">
         {verifying ? "Confirm your email address to finish setting up your account." : email ? "Check your inbox and open the verification link to activate your account." : "Open the verification link in your inbox, or sign in to request a new link."}
         {email && <Text as="span" display="block" fontSize="sm" fontWeight="medium" bg="blue.50" color="blue.700" borderWidth="1px" borderColor="blue.200" borderRadius="md" px="4" py="3" mt="3" overflowWrap="anywhere">{email}</Text>}
@@ -93,7 +93,7 @@ export default function AccountRecoveryForm({ mode }) {
         {verifying ? "Verify Email" : verification ? "Resend Verification Email" : forgotPassword ? "Send Reset Link" : "Continue"}
       </Button>}
       {verifying && email && !verified && <Button type="button" variant="outline" color="blue.700" disabled={saving} onClick={(event) => submit(event, true)}>Resend Verification Email</Button>}
-      <Link href="/login" variant="underline" fontSize={forgotPassword ? "sm" : undefined} alignSelf={themedCard ? "center" : undefined}>{verified ? "Login" : forgotPassword ? "Back to Login" : "Go Back"}</Link>
+      <Link href="/login" variant="underline" fontSize={forgotPassword ? "sm" : undefined} alignSelf={themedCard ? "center" : undefined}>{verified ? "Login" : forgotPassword ? "Back To Login" : "Go Back"}</Link>
     </Stack></form>}
     <noscript>JavaScript must be enabled to use this secure form.</noscript>
   </Box></Center>;

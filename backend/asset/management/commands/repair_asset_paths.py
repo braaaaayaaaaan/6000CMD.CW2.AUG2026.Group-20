@@ -1,18 +1,41 @@
-"""Recover stale storage references using the recorded content digest."""
+"""Recover stale storage references without bypassing upload validation."""
 from pathlib import Path
 
+from django.conf import settings
 from django.core.exceptions import SuspiciousFileOperation
 from django.core.management.base import BaseCommand, CommandError
+from django.utils import timezone
 
-from asset.files import file_digest
-from asset.models import Asset
+from asset.files import copy_private_file, file_digest, legacy_file_path, quarantine_recovery_key
+from asset.models import Asset, is_approved_key, is_quarantine_key
 
 
 class Command(BaseCommand):
-    help = "Find missing asset files in uploads by SHA-256; pass --apply to repair their paths."
+    help = "Find missing files by SHA-256 in private storage and legacy uploads; pass --apply to repair."
 
     def add_arguments(self, parser):
         parser.add_argument("--apply", action="store_true")
+
+    def candidates(self, storage):
+        # Prefer already validated files, then quarantined and legacy originals.
+        for prefix in ("approved", "quarantine", "uploads"):
+            root = (Path(settings.MEDIA_ROOT) / prefix if prefix == "uploads"
+                    else Path(storage.path(prefix)))
+            for path in sorted(root.rglob("*")):
+                if not path.is_file() or path.is_symlink():
+                    continue
+                name = prefix + "/" + path.relative_to(root).as_posix()
+                try:
+                    if prefix == "uploads":
+                        source = legacy_file_path(name)
+                    else:
+                        if not (is_approved_key(name) or is_quarantine_key(name)):
+                            continue
+                        source = Path(storage.path(name))
+                    with source.open("rb") as file:
+                        yield name, source, file_digest(file)
+                except (OSError, ValueError, SuspiciousFileOperation):
+                    continue
 
     def handle(self, *args, **options):
         storage = Asset._meta.get_field("url").storage
@@ -31,49 +54,59 @@ class Command(BaseCommand):
 
         wanted = {asset.sha256 for asset in missing if asset.sha256}
         matches = {}
-        root = Path(storage.path("uploads"))
-        for path in sorted(root.rglob("*")):
-            if not path.is_file():
-                continue
-            name = "uploads/" + path.relative_to(root).as_posix()
-            try:
-                with storage.open(name, "rb") as file:
-                    digest = file_digest(file)
-            except (OSError, ValueError, SuspiciousFileOperation):
-                continue
+        for name, source, digest in self.candidates(storage):
             if digest in wanted:
-                matches.setdefault(digest, name)
+                matches.setdefault(digest, (name, source))
 
         repaired = unresolved = 0
         for asset in missing:
-            name = matches.get(asset.sha256)
-            if not name:
+            candidate = matches.get(asset.sha256)
+            if not candidate:
                 unresolved += 1
-                self.stderr.write(f"{asset.pk}: no upload matches the recorded SHA-256")
+                self.stderr.write(f"{asset.pk}: no file matches the recorded SHA-256")
                 continue
+            name, source = candidate
+            # Only previously approved content can retain approved status.
+            approved = (asset.processing_status == Asset.ProcessingStatus.APPROVED
+                        and is_approved_key(name))
+            target = name if approved or is_quarantine_key(name) else quarantine_recovery_key(name)
             if options["apply"]:
-                # Recheck the candidate before updating, and preserve concurrent replacements.
                 try:
-                    with storage.open(name, "rb") as file:
+                    with source.open("rb") as file:
                         if file_digest(file) != asset.sha256:
                             raise ValueError("Candidate changed")
+                    if target != name:
+                        copy_private_file(source, target)
+                    with storage.open(target, "rb") as file:
+                        if file_digest(file) != asset.sha256:
+                            raise ValueError("Recovery copy changed")
                 except (OSError, ValueError, SuspiciousFileOperation):
                     unresolved += 1
-                    self.stderr.write(f"{asset.pk}: matching upload became unavailable or changed")
+                    self.stderr.write(f"{asset.pk}: matching file became unavailable or changed")
                     continue
+                values = {"url": target}
+                if not approved:
+                    values.update(
+                        processing_status=Asset.ProcessingStatus.PENDING,
+                        processing_detail="Recovered file awaiting required file-type validation.",
+                        processing_updated_at=timezone.now(), processing_attempts=0,
+                        processing_token=None, processing_lease_until=None,
+                    )
                 updated = Asset.objects.filter(
                     pk=asset.pk, url=asset.url.name, sha256=asset.sha256,
-                ).update(url=name)
+                    processing_status=asset.processing_status, processing_token=asset.processing_token,
+                ).update(**values)
                 if not updated:
                     unresolved += 1
                     self.stderr.write(f"{asset.pk}: asset changed during repair; run again")
                     continue
                 repaired += 1
-            self.stdout.write(f"{asset.pk}: {asset.url.name} -> {name}")
+            suffix = "" if approved else " (requires processing before access)"
+            self.stdout.write(f"{asset.pk}: {asset.url.name} -> {target}{suffix}")
 
         if options["apply"]:
             self.stdout.write(f"{repaired} repaired; {unresolved} unresolved.")
         else:
             self.stdout.write(f"{len(missing) - unresolved} recoverable; {unresolved} unresolved. Run with --apply to repair.")
         if unresolved:
-            raise CommandError("Some asset paths could not be recovered from local uploads.")
+            raise CommandError("Some asset paths could not be recovered from local files.")

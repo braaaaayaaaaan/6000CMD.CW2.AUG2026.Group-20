@@ -16,6 +16,7 @@
     "@uiw/react-color-sketch": "^2.9.2",
     "axios": "^1.13.1",
     "file-type": "^21.0.0",
+    "gltf-validator": "2.0.0-dev.3.10",
     "next": "^16.0.1",
     "next-themes": "^0.4.6",
     "react": "19.2.0",
