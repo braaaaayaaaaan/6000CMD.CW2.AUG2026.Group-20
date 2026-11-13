@@ -47,10 +47,10 @@ export function UploadStatusTracker({ assetId, enabled, onStatus }) {
   return null;
 }
 
-export default function UploadAssetModal({ asset, onAssetUploaded }) {
+export default function UploadAssetModal({ asset, onAssetUploaded, defaultOpen = false }) {
   const session = useBrowserSession();
   const { tags, loading, error, refresh } = useTags();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [file, setFile] = useState(null);
@@ -140,18 +140,20 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
       onOpenChange={changeOpen}
       closeOnEscape={!saving}
       closeOnInteractOutside={!saving}
+      placement="center"
+      scrollBehavior="inside"
       lazyMount
       unmountOnExit
     >
       <Dialog.Trigger asChild>
         <Button
-          variant={asset ? "surface" : "outline"}
+          variant={asset ? "surface" : "solid"}
           size={asset ? "md" : "sm"}
           bg={asset ? undefined : "blue.700"}
           color={asset ? undefined : "white"}
         >
           {!asset && <MdCloudUpload />}
-          {asset ? "Update" : "Upload Asset"}
+          {asset ? "New version" : "Upload a file"}
         </Button>
       </Dialog.Trigger>
       <Portal>
@@ -160,45 +162,21 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
           <Dialog.Content
             as="form"
             onSubmit={submit}
-            maxW="lg"
+            maxW="xl"
             w="calc(100% - 2rem)"
+            maxH="calc(100dvh - 2rem)"
           >
-            <Dialog.Header>
+            <Dialog.Header pb="2" pr="12">
               <Dialog.Title>
-                {asset ? "Update Asset File" : "Upload New Asset"}
+                {asset ? "Upload a new version" : "Upload a file"}
               </Dialog.Title>
             </Dialog.Header>
-            <Dialog.Body pb="4">
-              <Stack gap="4">
+            <Dialog.Body pt="2" pb="6">
+              <Stack gap="5">
                 <Text fontSize="sm">
                   We&apos;ll check your file before it appears in the library.
                   {asset && " Earlier ready versions stay available while we check the new one."}
                 </Text>
-                {!asset && (
-                  <>
-                    <Field.Root>
-                      <Field.Label>Name</Field.Label>
-                      <Input
-                        placeholder="Name"
-                        value={name}
-                        onChange={(event) => setName(event.target.value)}
-                        required
-                        maxLength={200}
-                        disabled={saving}
-                      />
-                    </Field.Root>
-                    <Field.Root>
-                      <Field.Label>Description</Field.Label>
-                      <Textarea
-                        placeholder="Description"
-                        value={description}
-                        onChange={(event) => setDescription(event.target.value)}
-                        required
-                        disabled={saving}
-                      />
-                    </Field.Root>
-                  </>
-                )}
                 <FileUpload.Root
                   maxW="lg"
                   alignItems="stretch"
@@ -219,7 +197,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
                     )
                   }
                 >
-                  {!asset && <FileUpload.Label>File</FileUpload.Label>}
+                  <FileUpload.Label>File</FileUpload.Label>
                   <FileUpload.HiddenInput />
                   <FileUpload.Dropzone borderColor={file ? "blue.500" : undefined}
                     _hover={{ borderColor: "blue.500" }}
@@ -228,23 +206,49 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
                     <Icon size="md" color="fg.muted">
                       {asset ? <LuUpload /> : <MdCloudUpload />}
                     </Icon>
-                    <FileUpload.DropzoneContent>
+                    <FileUpload.DropzoneContent textAlign="center">
                       <Box>
                         {asset ? (
                           "Drop your new file here."
                         ) : (
                           <>
-                            Drop a file here.
+                            Drop a file here or click to browse.
                             <br />
                             JPG, JPEG, PNG, MP4 and GLB.
                           </>
                         )}
                       </Box>
-                      <Text fontSize="sm">Up to {MAX_UPLOAD_MB} MB</Text>
+                      <Text fontSize="sm" color="fg.muted">One file · Up to {MAX_UPLOAD_MB} MB</Text>
                     </FileUpload.DropzoneContent>
                   </FileUpload.Dropzone>
                   <FileUpload.List />
                 </FileUpload.Root>
+                {!asset && (
+                  <>
+                    <Field.Root>
+                      <Field.Label>Name</Field.Label>
+                      <Input
+                        placeholder="Give this asset a clear name"
+                        value={name}
+                        onChange={(event) => setName(event.target.value)}
+                        required
+                        maxLength={200}
+                        disabled={saving}
+                      />
+                    </Field.Root>
+                    <Field.Root>
+                      <Field.Label>Description</Field.Label>
+                      <Textarea
+                        placeholder="Add a short description to help people find this file"
+                        value={description}
+                        onChange={(event) => setDescription(event.target.value)}
+                        required
+                        disabled={saving}
+                      />
+                    </Field.Root>
+                  </>
+                )}
+
                 {saving && (
                   <Stack gap="2" role="status" aria-live="polite">
                     <Text fontSize="sm">
@@ -260,7 +264,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
                 )}
                 {!asset && (
                   <Field.Root>
-                    <Field.Label>Tags</Field.Label>
+                    <Field.Label>Tags (optional)</Field.Label>
                     <AssetTag
                       tags={tags}
                       loading={loading}
@@ -285,12 +289,11 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
                 )}
               </Stack>
             </Dialog.Body>
-            <Dialog.Footer>
+            <Dialog.Footer borderTopWidth="1px" gap="3">
               <Dialog.ActionTrigger asChild>
                 <Button
                   type="button"
-                  variant={asset ? "surface" : "outline"}
-                  colorPalette={asset ? "red" : undefined}
+                  variant="outline"
                   disabled={saving}
                 >
                   Cancel
@@ -298,9 +301,9 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
               </Dialog.ActionTrigger>
               <Button
                 type="submit"
-                variant={asset ? "surface" : "solid"}
-                bg={asset ? undefined : "blue.700"}
-                color={asset ? undefined : "white"}
+                variant="solid"
+                bg="blue.700"
+                color="white"
                 loading={saving}
                 loadingText="Uploading…"
                 minW="28"

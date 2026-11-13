@@ -10,7 +10,7 @@ export default function TagFilterComponent({ value = "", onChange }) {
     <Flex gap="2" align="center" wrap="wrap">
       <Menu.Root>
         <Menu.Trigger asChild>
-          <Button variant="outline" size="sm" disabled={loading}><IoPricetagsSharp /> Tags</Button>
+          <Button variant="outline" size="sm" disabled={loading}><IoPricetagsSharp /><Text as="span" truncate maxW="40">{value ? tags.find((tag) => String(tag.id) === value)?.title || "Selected tag" : "All tags"}</Text></Button>
         </Menu.Trigger>
         <Portal>
           <Menu.Positioner>

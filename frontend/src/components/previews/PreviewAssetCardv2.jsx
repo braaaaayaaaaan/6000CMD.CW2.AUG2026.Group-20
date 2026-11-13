@@ -80,11 +80,11 @@ export default function PreviewAssetCardv2({
     ["Code", asset.code],
     ["Description", asset.description],
     ["Version", asset.version_no],
-    ["Upload Datetime", formatDateTime(asset.upload_datetime)],
-    ["Uploaded By", asset.uploaded_by],
+    ["Uploaded", formatDateTime(asset.upload_datetime)],
+    ["Uploaded by", asset.uploaded_by],
     ["Status", <AssetProcessingStatus key="status" asset={(history.data || []).find((version) => version.id === asset.id) || asset} showDetail />],
-    ["File Type", asset.file_type],
-    ["File Size", Number(asset.file_size).toFixed(2) + " MB"],
+    ["Format", asset.file_type],
+    ["Size", Number(asset.file_size).toFixed(2) + " MB"],
   ];
 
   async function removeAsset() {
@@ -107,7 +107,7 @@ export default function PreviewAssetCardv2({
   }
 
   return (
-    <Card.Root w="full" minW="0" minH={{ xl: "580px" }}>
+    <Card.Root w="full" minW="0">
       <Card.Body display="flex" flexDirection="column" height="100%">
         <Tabs.Root
           defaultValue="metadata"
@@ -115,11 +115,11 @@ export default function PreviewAssetCardv2({
           style={{ flex: 1, display: "flex", flexDirection: "column" }}
         >
           <Tabs.List flexWrap="wrap">
-            <Tabs.Trigger value="metadata">Metadata</Tabs.Trigger>
-            {asset.file_type === "glb" && (
-              <Tabs.Trigger value="advanced">Advanced Settings</Tabs.Trigger>
+            <Tabs.Trigger value="metadata">Details</Tabs.Trigger>
+            {asset.file_type === "glb" && asset.processing_status === "approved" && (
+              <Tabs.Trigger value="advanced">3D view</Tabs.Trigger>
             )}
-            <Tabs.Trigger value="version">Version Control</Tabs.Trigger>
+            <Tabs.Trigger value="version">Version history</Tabs.Trigger>
           </Tabs.List>
           <Tabs.Content
             value="metadata"
@@ -153,7 +153,7 @@ export default function PreviewAssetCardv2({
                 Download
               </Button>
               {editable && (
-                <Flex gap="10px" wrap="wrap">
+                <Flex gap="2" wrap="wrap">
                   <EditAssetModal
                     asset={asset}
                     onAssetUpdated={onAssetUpdated}
@@ -231,7 +231,7 @@ export default function PreviewAssetCardv2({
               )}
             </Flex>
           </Tabs.Content>
-          {asset.file_type === "glb" && (
+          {asset.file_type === "glb" && asset.processing_status === "approved" && (
             <Tabs.Content value="advanced">
               <Grid
                 templateColumns={{ base: "minmax(0, 1fr)", md: "1fr 2fr" }}

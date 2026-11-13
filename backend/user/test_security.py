@@ -569,6 +569,9 @@ class AccountSecurityTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         path = response.data["url"].split("http://testserver", 1)[-1]
         media_client = self.client
+        Asset.objects.filter(pk=asset.pk).update(sha256="f" * 64)
+        self.assertEqual(media_client.get(path).status_code, 403)
+        Asset.objects.filter(pk=asset.pk).update(sha256=asset.sha256)
         Asset.objects.filter(pk=asset.pk).update(
             url=f"approved/{uuid.uuid4().hex}/{uuid.uuid4().hex}"
         )

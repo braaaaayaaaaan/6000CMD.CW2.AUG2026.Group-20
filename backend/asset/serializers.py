@@ -82,6 +82,9 @@ class AssetSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data.update(signed_media_url(instance, self.context.get("request")))
+        if instance.processing_status == Asset.ProcessingStatus.APPROVED and not instance.is_published:
+            data["processing_status"] = Asset.ProcessingStatus.ERROR
+            data["processing_detail"] = "The stored file reference needs repair before this asset is available."
         return data
 
 

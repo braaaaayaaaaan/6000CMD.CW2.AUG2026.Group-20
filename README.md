@@ -163,20 +163,33 @@ PostgreSQL concurrency and actual SMTP/browser flows still need deployment testi
 
 ## Private asset storage and recovery
 
-Asset files live on the Django host under `DJANGO_MEDIA_ROOT` (default:
-`backend/media/uploads`); asset/version/tag metadata lives in PostgreSQL, including
+New asset files live on the Django host under `DJANGO_ASSET_PRIVATE_ROOT` (default:
+`backend/private_assets`), in private `quarantine` and `approved` directories.
+`DJANGO_MEDIA_ROOT` retains the legacy uploads location for explicit recovery.
+Asset/version/tag metadata lives in PostgreSQL, including
 Supabase when configured. This is local private storage, not Supabase Storage.
 There is no configured file backup service in this repository.
 
 Only `/media/assets/<uuid>/?token=...` serves files. Both issuing and redeeming a
 link require a currently authenticated, verified, MFA-complete account. A link is
 bound to its issuing user, original live login session, asset/version and stored
-file; another login belonging to the same user may redeem it only while that
+file digest; another login belonging to the same user may redeem it only while that
 original session remains valid. Expiry, logout, deactivation, credential/role
-revocation, deletion and file replacement invalidate access. GET, HEAD, downloads
+revocation, deletion and changes to the bound file invalidate access. GET, HEAD, downloads
 and Range requests use the same checks. Viewer/Editor/Admin retain shared-library
-read access; only Editor/Admin can upload or replace files. The current model has
-no publication, quarantine or rejection states; no such workflow is implied.
+read access; only Editor/Admin can upload or replace files. Uploads start in
+quarantine and receive links only after successful processing and approval.
+Pending/error uploads remain visible to their uploader and application admins;
+the shared library contains approved versions. Replacements create a new immutable
+version, preserving approved historical versions and their valid links.
+
+Run `python backend/manage.py cleanup_asset_files --process-uploads` to process
+pending uploads. Image checks run in an isolated Pillow process; video checks
+require FFprobe and GLB checks require Node and the frontend's `gltf-validator`
+package. Failed validation rejects the file; operational failures leave an error
+that an operator can retry with `--process-uploads --retry-errors`.
+For legacy files, inspect `cleanup_asset_files --quarantine-existing` first and
+use `--quarantine-existing --apply` to relocate them for processing.
 
 Image/video elements and model-viewer send credentials. Use matching hostnames,
 exact credentialed CORS origins, and HTTPS/Secure cookies in production. Native
@@ -185,7 +198,7 @@ depend on SameSite settings and browser third-party-cookie policy. URLs can be
 refreshed through the authenticated `media-url` endpoint when expired.
 
 Never add a web-server `/media/` alias or Django debug static-media route. Keep
-MEDIA_ROOT outside Next.js `public`, static roots and any web-server document root;
+both storage roots outside Next.js `public`, static roots and any web-server document root;
 the application rejects overlap with its known static/public directories. Restrict
 filesystem access to the service account. Private storage rejects traversal,
 out-of-root symlinks and public `.url()` access. Uploads receive random filenames.
@@ -202,11 +215,14 @@ including data URIs: export self-contained binary GLBs with embedded buffer-view
 textures. Legacy GLB/MP4 containers receive resource checks at redemption too. These controls
 are not antivirus scanning or complete MP4/glTF semantic validation.
 
-`asset.0012_asset_sha256` adds one optional 64-character digest field. It must be
-approved and applied before running this code against an existing database. It
-does not rewrite existing records/files; legacy digests remain blank. New uploads
+`asset.0012_asset_sha256` adds one optional 64-character digest field.
+`asset.0012_upload_processing` adds processing metadata and private storage;
+`asset.0013_merge_sha256_upload_processing` joins both migration histories.
+Review and apply the migrations before running against an existing database.
+The digest migration does not rewrite existing records/files; legacy digests remain blank. New uploads
 are hashed with SHA-256 and the stored copy is checked before committing metadata.
-Replacement uploads update their digest; historical versions retain their own.
+Promotion checks the approved copy against the same trusted digest.
+Replacement uploads receive their own digest; historical versions retain their own.
 Downloads do not repeatedly hash large files. Run `python backend/manage.py
 verify_asset_files` after a restore or suspected storage incident. This read-only
 command exits unsuccessfully for missing files, mismatches or absent legacy
@@ -215,7 +231,7 @@ mismatch, pause asset serving, investigate, and restore a trusted copy or upload
 validated replacement before reopening access. Hashing detects changes against a
 trusted baseline; it does not prove safety or protect a compromised database.
 
-Back up PostgreSQL metadata **and** the entire private media directory as a
+Back up PostgreSQL metadata **and** the private asset and legacy media directories as a
 coordinated set. Pause writes while taking the database snapshot/export and file
 snapshot (or use coordinated storage snapshots). Record the application/migration
 version, encrypt backups and keep a separate copy with restricted access. Back up

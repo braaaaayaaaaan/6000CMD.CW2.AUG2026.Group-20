@@ -81,7 +81,7 @@ def detect_type(file):
     return None
 
 
-def validate_file(file):
+def validate_file(file, *, check_filename=True):
     if not file.size or file.size > settings.ASSET_UPLOAD_MAX_BYTES:
         raise ValidationError(
             "Choose a nonempty file up to %s MB."
@@ -91,7 +91,7 @@ def validate_file(file):
     if kind is None:
         raise ValidationError("Only valid JPG, PNG, MP4, and GLB files are supported.")
     name = str(file.name)
-    if ("\\" in name or "/" in name or "\x00" in name
+    if check_filename and ("\\" in name or "/" in name or "\x00" in name
             or any(ord(char) < 32 for char in name) or PurePosixPath(name).suffix.lower() != "." + kind):
         raise ValidationError("Use a safe filename with an extension matching the file content.")
     position = file.tell()
@@ -387,7 +387,21 @@ async function inspect() {
   }
   let requestedExternal = false;
   const report = await validator.validateBytes(bytes, {
-    format: 'glb', maxIssues: 100, writeTimestamp: false,
+    // Finish validation even when ordinary warnings exceed 100 messages.
+    // The worker's timeout/heap limits and the returned summary remain bounded.
+    format: 'glb', maxIssues: 0, writeTimestamp: false,
+    // This advisory can repeat per vertex and exhaust report memory. It only
+    // concerns unused, zero-weight joint slots. Joint bounds, duplicate active
+    // joints and invalid numeric data remain checked.
+    ignoredIssues: ['ACCESSOR_JOINTS_USED_ZERO_WEIGHT'],
+    // These affect deformation, shading or mesh quality, not file readability.
+    // Keep them in internal diagnostics without rejecting the original. All
+    // other errors (including non-finite values and invalid indices) still block.
+    severityOverrides: {
+      ACCESSOR_WEIGHTS_NON_NORMALIZED: 1,
+      ACCESSOR_VECTOR3_NON_UNIT: 1,
+      ACCESSOR_INDEX_TRIANGLE_DEGENERATE: 1
+    },
     externalResourceFunction: () => {
       requestedExternal = true;
       return Promise.reject(new Error('External resources are prohibited.'));
@@ -405,9 +419,14 @@ async function inspect() {
   if (issues.numErrors > 0) return reject('GLB does not meet the glTF specification.');
   if (issues.truncated || report.mimeType !== 'model/gltf-binary' ||
       report.info?.version !== '2.0') throw new Error('Incomplete validation.');
-  return {valid: true, warnings: issues.numWarnings,
-    warningCodes: issues.messages.filter(x => x.severity === 1)
-      .map(x => x.code).filter(x => /^[A-Z0-9_]{1,80}$/.test(x)).slice(0, 10)};
+  const warningCodes = [];
+  for (const issue of issues.messages) {
+    if (issue.severity === 1 && /^[A-Z0-9_]{1,80}$/.test(issue.code)) {
+      warningCodes.push(issue.code);
+      if (warningCodes.length === 10) break;
+    }
+  }
+  return {valid: true, warnings: issues.numWarnings, warningCodes};
 }
 inspect().then(result => process.stdout.write(JSON.stringify(result)))
   .catch(() => { process.exitCode = 2; });
@@ -469,7 +488,7 @@ def validate_image(key, expected_type):
         # filesystem failures are operational errors, not invalid-image results.
         with storage.open(key, "rb") as original:
             try:
-                if validate_file(original) != expected_type:
+                if validate_file(original, check_filename=False) != expected_type:
                     raise ValidationError(
                         "Image content does not match its uploaded type."
                     )
@@ -534,7 +553,7 @@ def validate_video(key):
     if source.is_symlink() or not source.is_file():
         raise OSError("Expected a regular quarantined video file.")
     with storage.open(key, "rb") as original:
-        if validate_file(original) != "mp4":
+        if validate_file(original, check_filename=False) != "mp4":
             raise ValidationError("Video content is not a supported MP4 file.")
 
     configured = settings.ASSET_FFPROBE_EXECUTABLE
@@ -649,7 +668,7 @@ def validate_glb(key):
     # An unbuffered descriptor preserves the position when handed to Node as
     # stdin, even after the preliminary signature check reads ahead.
     with source.open("rb", buffering=0) as original:
-        if validate_file(File(original)) != "glb":
+        if validate_file(File(original), check_filename=False) != "glb":
             raise ValidationError("File content is not a supported GLB file.")
         exit_code, outcome, diagnostics = run_validation_process(
             [
@@ -823,6 +842,10 @@ def promote_asset(job):
             if current is None:
                 return False
             copy_private_file(Path(storage.path(current.url.name)), target_key)
+            if current.sha256:
+                with storage.open(target_key, "rb") as stored:
+                    if file_digest(stored) != current.sha256:
+                        raise ValidationError("The quarantined upload failed its integrity check.")
             # Copying may take time; an expired claim must never publish.
             if not live_claim.filter(processing_lease_until__gt=timezone.now()).update(
                 url=target_key,

@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Button, Spinner, Stack, Text } from "@chakra-ui/react";
-import { LuCircleCheck, LuCircleX, LuCircleAlert } from "react-icons/lu";
+import { LuCircleCheck, LuCircleX, LuCircleAlert, LuClock3 } from "react-icons/lu";
 import Script from "next/script";
 import { useEffect, useState } from "react";
 import { api, mediaUrl } from "@/utils/api";
@@ -18,13 +18,14 @@ export function AssetProcessingStatus({ asset, showDetail = false }) {
   const pending = isAssetProcessing(asset);
   const approved = asset.processing_status === "approved";
   const rejected = asset.processing_status === "rejected";
-  const StatusIcon = approved ? LuCircleCheck : rejected ? LuCircleX : LuCircleAlert;
+  const checking = asset.processing_status === "processing";
+  const StatusIcon = pending ? LuClock3 : approved ? LuCircleCheck : rejected ? LuCircleX : LuCircleAlert;
   return (
     <Stack gap="2" align="start" minW="0">
       <Badge colorPalette={pending ? "blue" : approved ? "green" : rejected ? "red" : "orange"}
         rounded="full" px="2.5" py="1" role="status" aria-live="polite"
         css={{ '@media (prefers-reduced-motion: no-preference)': { transition: 'background-color 150ms ease, color 150ms ease' } }}>
-        {pending ? <Spinner size="xs" css={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }} /> : <StatusIcon aria-hidden="true" />}
+        {checking ? <Spinner size="xs" css={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }} /> : <StatusIcon aria-hidden="true" />}
         {assetProcessingMessage(asset)}
       </Badge>
       {showDetail && assetProcessingDetail(asset) && <Text fontSize="sm" color="fg.muted" overflowWrap="anywhere">{assetProcessingDetail(asset)}</Text>}
@@ -45,11 +46,12 @@ export default function PreviewAssetMedia({
   const src = mediaUrl(media?.key === asset.url ? media.url : asset.url);
   useEffect(() => {
     if (!approved) return;
-    if (!attempt && asset.url_expires_at * 1000 > Date.now()) return;
+    if (!attempt && asset.url && asset.url_expires_at * 1000 > Date.now()) return;
     const controller = new AbortController();
     api
       .get("/assets/" + asset.id + "/media-url/", { signal: controller.signal })
       .then(({ data }) => {
+        if (!data.url) throw new Error("No media link available");
         const url = new URL(mediaUrl(data.url));
         if (attempt) url.searchParams.set("preview", String(attempt));
         if (!controller.signal.aborted)
@@ -64,7 +66,7 @@ export default function PreviewAssetMedia({
         if (!controller.signal.aborted)
           setMedia({
             key: asset.url,
-            error: "Unable to refresh this preview. Please try again.",
+            error: "Preview unavailable. You can still try downloading this file.",
           });
       });
     return () => controller.abort();
@@ -94,7 +96,7 @@ export default function PreviewAssetMedia({
       setMedia({
         key: asset.url,
         error:
-          "Unable to load this file. Retry the preview or upload a valid replacement.",
+          "Preview unavailable. You can still download this file.",
       });
   }
   if (!approved)
@@ -114,6 +116,8 @@ export default function PreviewAssetMedia({
         </Button>
       </Stack>
     );
+  if (!src)
+    return <Stack align="center" justify="center" h="full" role="status"><Spinner size="sm" /><Text fontSize="sm">Loading preview…</Text></Stack>;
   if (["png", "jpg"].includes(asset.file_type)) {
     return (
       <PreviewImageAsset
@@ -143,7 +147,7 @@ export default function PreviewAssetMedia({
   if (scriptError)
     return (
       <Text role="alert">
-        Unable to load the 3D viewer. Reload the page to retry.
+        Preview unavailable. You can still download this file.
       </Text>
     );
   return (

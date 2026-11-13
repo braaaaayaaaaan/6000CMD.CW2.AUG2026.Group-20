@@ -191,12 +191,12 @@ ASSET_PRIVATE_ROOT = path_environment(
     "DJANGO_ASSET_PRIVATE_ROOT", BASE_DIR, "private_assets"
 )
 if any(
-    root.resolve() == ASSET_PRIVATE_ROOT.resolve()
-    or root.resolve() in ASSET_PRIVATE_ROOT.resolve().parents
-    for root in (MEDIA_ROOT, STATIC_ROOT)
+    ASSET_PRIVATE_ROOT.resolve().is_relative_to(root.resolve())
+    or root.resolve().is_relative_to(ASSET_PRIVATE_ROOT.resolve())
+    for root in (MEDIA_ROOT, STATIC_ROOT, BASE_DIR.parent / "frontend" / "public")
 ):
     raise ValueError(
-        "DJANGO_ASSET_PRIVATE_ROOT must be outside media and static storage."
+        "DJANGO_ASSET_PRIVATE_ROOT must be separate from media, static and frontend public directories."
     )
 MEDIA_FRAME_ALLOWED_ORIGINS = origins_environment("MEDIA_FRAME_ALLOWED_ORIGINS")
 

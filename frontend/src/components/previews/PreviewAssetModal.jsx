@@ -7,7 +7,6 @@ import {
   Dialog,
   Flex,
   Grid,
-  Heading,
   Portal,
 } from "@chakra-ui/react";
 import { useState } from "react";
@@ -21,12 +20,14 @@ export default function PreviewAssetModal({
   onAssetUpdated,
   onAssetUploaded,
   onVersionsLoaded,
+  triggerLabel,
 }) {
   const [open, setOpen] = useState(false);
   const [exposure, setExposure] = useState(1);
   const [shadowIntensity, setShadowIntensity] = useState(1);
   const [shadowSoftness, setShadowSoftness] = useState(1);
   const [hsva, setHsva] = useState({ h: 0, s: 0, v: 100, a: 1 });
+  const ready = asset.processing_status === "approved";
   const modelOptions = {
     exposure,
     shadowIntensity,
@@ -37,57 +38,49 @@ export default function PreviewAssetModal({
     <Dialog.Root
       open={open}
       onOpenChange={({ open }) => setOpen(open)}
-      size="cover"
+      scrollBehavior="inside"
       placement="center"
       lazyMount
       unmountOnExit
     >
       <Dialog.Trigger asChild>
         <Button variant="surface">
-          {asset.processing_status === "approved" ? "Preview" : "Details"}
+          {triggerLabel || (asset.processing_status === "approved" ? "Preview" : "Details")}
         </Button>
       </Dialog.Trigger>
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          <Dialog.Content>
-            <Dialog.Body>
+          <Dialog.Content maxW={ready ? "6xl" : "2xl"} w="calc(100% - 2rem)" maxH="calc(100dvh - 2rem)">
+            <Dialog.Header pr="12" pb="2">
+              <Dialog.Title fontSize="xl" fontWeight="semibold" overflowWrap="anywhere">{asset.name}</Dialog.Title>
+            </Dialog.Header>
+            <Dialog.Body pt="2" pb="6">
               <Flex
                 direction="column"
-                gap="10px"
-                padding="10px"
+                gap="6"
                 alignItems="flex-start"
               >
-                <Dialog.Title asChild>
-                  <Heading
-                    size="2xl"
-                    fontWeight="bold"
-                    marginTop="20px"
-                    overflowWrap="anywhere"
-                  >
-                    {asset.name}
-                  </Heading>
-                </Dialog.Title>
                 <Grid
                   w="full"
                   templateColumns={{
                     base: "minmax(0, 1fr)",
-                    xl: "minmax(0, 4fr) minmax(0, 3fr)",
+                    xl: ready ? "minmax(0, 4fr) minmax(0, 3fr)" : "minmax(0, 1fr)",
                   }}
-                  gap="20px"
+                  gap="6"
                 >
-                  <Box
+                  {ready && <Box
                     borderWidth="1px"
                     rounded="md"
                     minW="0"
-                    h={{ base: "300px", md: "480px", xl: "580px" }}
+                    h={{ base: "260px", md: "420px", xl: "520px" }}
                     bg={asset.file_type === "glb" ? "transparent" : "gray.100"}
                   >
                     <PreviewAssetMedia
                       asset={asset}
                       modelOptions={modelOptions}
                     />
-                  </Box>
+                  </Box>}
                   <PreviewAssetCardv2
                     asset={asset}
                     isOpen={open}

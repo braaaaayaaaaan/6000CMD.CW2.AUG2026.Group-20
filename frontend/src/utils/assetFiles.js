@@ -37,11 +37,11 @@ export function restrictModelResources(viewer, source) {
 export function assetProcessingMessage(asset) {
   return (
     {
-      pending: "Processing",
+      pending: "Pending",
       processing: "Processing",
       approved: "Ready",
-      rejected: "Rejected",
-      error: "Processing error",
+      rejected: "Failed",
+      error: "Processing problem",
     }[asset.processing_status] || "Unavailable"
   );
 }
@@ -71,41 +71,14 @@ export function mergeAssetResource(previous, next) {
   return Array.isArray(next) ? next.map(merge) : { ...next, results: next.results.map(merge) };
 }
 
-// Translate only known backend reasons. Unknown diagnostics never reach the UI.
+// User guidance depends on the outcome, not the validator's diagnostics.
 export function assetProcessingDetail(asset) {
-  if (isAssetProcessing(asset)) return asset.processing_status === "pending"
-    ? "Waiting for file checks. You can keep using the library."
-    : "Checking file… You can keep using the library.";
-  if (asset.processing_status === "error")
-    return "We couldn't finish checking this file. Please try again later or upload a new version.";
-  if (asset.processing_status !== "rejected") return "";
-  const reason = asset.processing_detail;
-  const messages = {
-    "Image content does not match its uploaded type.": "This image format isn't supported.",
-    "Image is corrupted, truncated or cannot be decoded.": "This image is corrupted or can't be opened.",
-    "Image is malformed or cannot be decoded.": "This image is corrupted or can't be opened.",
-    "Image dimensions are invalid.": "This image has invalid dimensions.",
-    "Video content is not a supported MP4 file.": "This file isn't a supported MP4 video.",
-    "Video container is not a supported MP4 file.": "This file isn't a supported MP4 video.",
-    "MP4 container is malformed or unreadable.": "This video is invalid or can't be read.",
-    "MP4 must contain a recognisable video stream.": "This file doesn't contain a valid video.",
-    "Video exceeds the 4K limit (3840 × 2160, including portrait).": "This video exceeds the supported 4K resolution.",
-    "Video dimensions are missing or invalid.": "This video has missing or invalid dimensions.",
-    "Video duration metadata is missing.": "This video has missing duration information.",
-    "Video duration metadata is invalid.": "This video has invalid duration information.",
-    "Video stream metadata is incomplete or unrecognisable.": "This video is invalid or can't be read.",
-    "GLB must be self-contained; external resources are prohibited.": "This 3D model uses unsupported external resources.",
-    "GLB exceeds the approved accessor complexity limits.": "This 3D model exceeds the supported complexity limits.",
-    "GLB uses an extension whose resource safety cannot be verified.": "This 3D model uses an unsupported feature.",
-  };
-  if (messages[reason]) return messages[reason];
-  if (/^Image exceeds the [\d,]+-pixel limit\.$/.test(reason || ""))
-    return reason === "Image exceeds the 100,000,000-pixel limit."
-      ? "This image exceeds the 100-megapixel limit."
-      : "This image exceeds the supported resolution.";
-  return asset.file_type === "glb"
-    ? "This 3D model contains invalid data. Choose a corrected file."
-    : "This file couldn't be accepted. Choose a corrected file.";
+  return {
+    pending: "Waiting to be checked.",
+    processing: "Checking your file.",
+    rejected: "Choose a different file and upload a new version.",
+    error: "Processing couldn't finish. Please try again later.",
+  }[asset.processing_status] || "";
 }
 
 export function uploadProgressPercent(event) {

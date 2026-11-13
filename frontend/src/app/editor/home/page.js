@@ -16,7 +16,6 @@ export default function EditorHome() {
 
   return (
     <EditorLayout>
-      <h1><b>Digital Assets</b></h1>
       {session.ready && session.authenticated
         ? <AssetCard />
         : <Text role="status" py="6">Loading your workspace…</Text>}
