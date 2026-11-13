@@ -21,7 +21,7 @@ export default function AddTag() {
       await api.post("/tags/", { title: title.trim() });
       setOpen(false);
       await refreshTags();
-      toaster.create({ description: "Tag created.", type: "success" });
+      toaster.create({ description: "Tag successfully created!", type: "success" });
     } catch (error) {
       setError(errorMessage(error));
     } finally {

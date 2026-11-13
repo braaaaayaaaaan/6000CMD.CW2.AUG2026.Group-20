@@ -16,7 +16,7 @@ export const system = createSystem(defaultConfig, {
           inverted: { value: "{colors.blue.900}" },
           error: { value: "{colors.blue.50}" },
           warning: { value: "{colors.blue.50}" },
-          success: { value: "{colors.blue.50}" },
+          success: { value: "{colors.green.50}" },
         },
         fg: {
           DEFAULT: { value: "{colors.blue.950}" },
@@ -25,7 +25,7 @@ export const system = createSystem(defaultConfig, {
           inverted: { value: "{colors.white}" },
           error: { value: "{colors.blue.700}" },
           warning: { value: "{colors.blue.700}" },
-          success: { value: "{colors.blue.700}" },
+          success: { value: "{colors.green.700}" },
         },
         border: {
           DEFAULT: { value: "{colors.blue.200}" },
@@ -35,7 +35,7 @@ export const system = createSystem(defaultConfig, {
           inverted: { value: "{colors.blue.800}" },
           error: { value: "{colors.blue.600}" },
           warning: { value: "{colors.blue.600}" },
-          success: { value: "{colors.blue.600}" },
+          success: { value: "{colors.green.600}" },
         },
         blue: {
           solid: { value: "{colors.blue.700}" },
@@ -51,7 +51,7 @@ export const system = createSystem(defaultConfig, {
             bg: "blue.700",
             color: "white",
             "&[data-type=warning]": { bg: "blue.700", color: "white" },
-            "&[data-type=success]": { bg: "blue.700", color: "white" },
+            "&[data-type=success]": { bg: "green.700", color: "white", borderColor: "green.600" },
             "&[data-type=error]": { bg: "blue.700", color: "white" },
           },
         },

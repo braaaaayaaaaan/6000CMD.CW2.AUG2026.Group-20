@@ -15,6 +15,7 @@ from .files import AssetMultiPartParser, staged_file
 from .media import MISSING_FILE_MESSAGE, signed_media_url
 from .models import Asset, AssetSeries, Tags
 from .permissions import AssetPermission
+from .processing import schedule_upload_processing
 from .serializers import AssetSerializer, TagSerializer
 from user.security import event
 
@@ -103,6 +104,7 @@ class AssetViewSet(viewsets.ModelViewSet):
                 version_no=number + 1,
                 uploaded_by=self.request.user.get_username(),
             )
+            schedule_upload_processing(asset.pk)
             event("asset_uploaded", self.request.user, target=asset,
                   metadata={"version_no": asset.version_no})
 
@@ -139,6 +141,7 @@ class AssetViewSet(viewsets.ModelViewSet):
                 )
                 replacement.tags.set(tags)
                 serializer.instance = replacement
+                schedule_upload_processing(replacement.pk)
             else:
                 serializer.save()
             event("asset_replaced" if "url" in serializer.validated_data else "asset_updated",

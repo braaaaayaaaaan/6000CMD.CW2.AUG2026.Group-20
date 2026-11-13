@@ -229,7 +229,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded, defaultOpen =
                     <Field.Root>
                       <Field.Label>Name</Field.Label>
                       <Input
-                        placeholder="Give This Asset A Clear Name"
+                        placeholder="Give this asset a clear name"
                         value={name}
                         onChange={(event) => setName(event.target.value)}
                         required
@@ -240,7 +240,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded, defaultOpen =
                     <Field.Root>
                       <Field.Label>Description</Field.Label>
                       <Textarea
-                        placeholder="Add A Short Description To Help People Find This File"
+                        placeholder="Add a short description to help people find this file"
                         value={description}
                         onChange={(event) => setDescription(event.target.value)}
                         required

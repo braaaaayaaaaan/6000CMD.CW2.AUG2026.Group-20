@@ -15,6 +15,8 @@ from django.core.exceptions import SuspiciousFileOperation
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command, CommandError
 from django.test import TestCase, override_settings
+from django.db import transaction
+from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
 
 from user import test_security as accounts
@@ -28,6 +30,7 @@ from .files import (
     validate_video,
 )
 from .models import Asset
+from .processing import process_uploaded_asset, schedule_upload_processing
 
 
 def image_bytes(kind="PNG"):
@@ -109,6 +112,56 @@ class AssetSecurityTests(TestCase):
 
     def path(self, data):
         return data["url"].split("http://testserver", 1)[-1]
+
+    def test_upload_schedules_checks_and_only_appears_after_validation(self):
+        with patch("asset.processing.upload_workers.submit") as submit:
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.upload(publish=False)
+                self.assertEqual(response.status_code, 201)
+                self.assertEqual(response.data["processing_status"], "pending")
+                self.assertIsNone(response.data["url"])
+                self.assertEqual(self.client.get("/assets/").data["count"], 0)
+                submit.assert_not_called()
+            asset = Asset.objects.get(pk=response.data["id"])
+            submit.assert_called_once_with(process_uploaded_asset, asset.pk)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(process_uploads(limit=1, asset_id=asset.pk), 1)
+        asset.refresh_from_db()
+        self.assertEqual(asset.processing_status, "approved", asset.processing_detail)
+        self.assertEqual(self.client.get("/assets/").data["count"], 1)
+
+    def test_rejected_upload_stays_out_of_library_and_other_jobs_are_untouched(self):
+        first = self.upload(publish=False)
+        second = self.upload(publish=False)
+        with patch("asset.files.check_asset_security", side_effect=ValidationError("Invalid file")):
+            self.assertEqual(process_uploads(limit=1, asset_id=first.data["id"]), 1)
+        self.assertEqual(Asset.objects.get(pk=first.data["id"]).processing_status, "rejected")
+        self.assertEqual(Asset.objects.get(pk=second.data["id"]).processing_status, "pending")
+        self.assertEqual(self.client.get("/assets/").data["count"], 0)
+
+    def test_rolled_back_upload_does_not_schedule_processing(self):
+        with patch("asset.processing.upload_workers.submit") as submit:
+            with self.captureOnCommitCallbacks(execute=True):
+                with transaction.atomic():
+                    schedule_upload_processing("unused")
+                    transaction.set_rollback(True)
+            submit.assert_not_called()
+
+    def test_file_replacement_schedules_checks_and_keeps_previous_version_visible(self):
+        original = self.upload().data
+        with patch("asset.processing.upload_workers.submit") as submit:
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.patch(f"/assets/{original['id']}/", {
+                    "url": SimpleUploadedFile("replacement.png", image_bytes()),
+                }, format="multipart")
+                self.assertEqual(response.status_code, 200, response.data)
+                self.assertEqual(response.data["processing_status"], "pending")
+                self.assertNotEqual(response.data["id"], original["id"])
+            replacement = Asset.objects.get(pk=response.data["id"])
+            submit.assert_called_once_with(process_uploaded_asset, replacement.pk)
+        library = self.client.get("/assets/").data
+        self.assertEqual(library["count"], 1)
+        self.assertEqual(library["results"][0]["id"], original["id"])
 
     def read(self, response):
         try:

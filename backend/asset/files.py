@@ -683,7 +683,11 @@ def validate_glb(key):
             ],
             GLB_VALIDATION_TIMEOUT_SECONDS,
             stdin=original,
-            env={"NODE_OPTIONS": ""},
+            # Node's crypto initialization needs SystemRoot on Windows.
+            env={"NODE_OPTIONS": "", **(
+                {"SystemRoot": os.environ["SystemRoot"]}
+                if os.name == "nt" and "SystemRoot" in os.environ else {}
+            )},
         )
     if exit_code != 0 or diagnostics:
         raise RuntimeError("GLB validation could not finish.")
@@ -793,7 +797,8 @@ def copy_private_file(source, target_key):
         temporary = Path(storage.path(temporary_key))
         if not same_file_contents(source, temporary):
             raise OSError("The private file copy could not be verified.")
-        with temporary.open("rb") as complete:
+        # Windows requires write access for fsync; this also works on macOS.
+        with temporary.open("r+b") as complete:
             os.fsync(complete.fileno())
         os.replace(temporary, target)
     finally:
@@ -881,7 +886,7 @@ def recover_processing_jobs():
     )
 
 
-def claim_processing_job(retry_errors=False, cutoff=None):
+def claim_processing_job(retry_errors=False, cutoff=None, asset_id=None):
     cutoff = cutoff or timezone.now()
     eligible = Q(processing_status=Asset.ProcessingStatus.PENDING)
     if retry_errors:
@@ -894,6 +899,8 @@ def claim_processing_job(retry_errors=False, cutoff=None):
             processing_attempts__lt=MAX_PROCESSING_ATTEMPTS,
             url__regex=QUARANTINE_KEY_PATTERN,
         ).order_by("upload_datetime", "id")
+        if asset_id is not None:
+            jobs = jobs.filter(pk=asset_id)
         if connection.features.has_select_for_update_skip_locked:
             jobs = jobs.select_for_update(skip_locked=True)
         else:
@@ -949,13 +956,14 @@ def finish_processing_job(job, status, detail):
         )
 
 
-def process_uploads(limit=100, retry_errors=False):
+def process_uploads(limit=100, retry_errors=False, asset_id=None):
     # Process each eligible version at most once per invocation.
     cutoff = timezone.now()
-    recover_processing_jobs()
+    if asset_id is None:
+        recover_processing_jobs()
     processed = 0
     for _ in range(limit):
-        job = claim_processing_job(retry_errors=retry_errors, cutoff=cutoff)
+        job = claim_processing_job(retry_errors=retry_errors, cutoff=cutoff, asset_id=asset_id)
         if job is None:
             break
         try:

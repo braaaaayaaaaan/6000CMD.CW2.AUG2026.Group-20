@@ -271,7 +271,10 @@ ASSET_UPLOAD_MAX_BYTES = (
 ASSET_IMAGE_MAX_PIXELS = integer_environment(
     "ASSET_IMAGE_MAX_PIXELS", 100_000_000, maximum=100_000_000
 )
-_venv_ffprobe = Path(sys.prefix) / "bin" / "ffprobe"
+_venv_ffprobe = (
+    Path(sys.prefix) / "Scripts" / "ffprobe.exe"
+    if os.name == "nt" else Path(sys.prefix) / "bin" / "ffprobe"
+)
 ASSET_FFPROBE_EXECUTABLE = os.environ.get(
     "ASSET_FFPROBE_EXECUTABLE",
     str(_venv_ffprobe) if _venv_ffprobe.is_file() else "ffprobe",

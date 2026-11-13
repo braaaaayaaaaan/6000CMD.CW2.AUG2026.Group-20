@@ -183,8 +183,11 @@ Pending/error uploads remain visible to their uploader and application admins;
 the shared library contains approved versions. Replacements create a new immutable
 version, preserving approved historical versions and their valid links.
 
-Run `python backend/manage.py cleanup_asset_files --process-uploads` to process
-pending uploads. Image checks run in an isolated Pillow process; video checks
+New uploads and replacement versions automatically queue validation after their
+database transaction commits. Each backend process runs up to two checks in the
+background. Run `python backend/manage.py cleanup_asset_files --process-uploads`
+to recover pending uploads after a backend restart. Image checks run in an
+isolated Pillow process; video checks
 require FFprobe and GLB checks require Node and the frontend's `gltf-validator`
 package. Failed validation rejects the file; operational failures leave an error
 that an operator can retry with `--process-uploads --retry-errors`.
