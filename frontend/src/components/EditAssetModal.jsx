@@ -74,7 +74,7 @@ export default function EditAssetModal({ asset, onAssetUpdated }) {
       onAssetUpdated?.(response.data);
       toaster.create({
         description: "Successfully Edited Asset!",
-        type: "info"
+        type: "success"
       });
 
     } catch (err) {
