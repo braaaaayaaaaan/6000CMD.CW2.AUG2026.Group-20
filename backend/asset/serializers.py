@@ -5,11 +5,39 @@ from rest_framework import serializers
 
 
 class AssetSerializer(serializers.ModelSerializer):
+    # Never ask storage for a raw URL, even while constructing a response.
     url = serializers.FileField(write_only=True)
+
     class Meta:
         model = Asset
-        fields = "__all__"
-        read_only_fields = ["version_no", "uploaded_by", "file_type", "file_size", "upload_datetime", "sha256"]
+        fields = [
+            "id",
+            "code",
+            "name",
+            "description",
+            "upload_datetime",
+            "uploaded_by",
+            "file_type",
+            "file_size",
+            "sha256",
+            "url",
+            "tags",
+            "version_no",
+            "processing_status",
+            "processing_detail",
+            "processing_updated_at",
+        ]
+        read_only_fields = [
+            "version_no",
+            "uploaded_by",
+            "file_type",
+            "file_size",
+            "sha256",
+            "upload_datetime",
+            "processing_status",
+            "processing_detail",
+            "processing_updated_at",
+        ]
         # The next version is allocated under a database lock, after validation.
         validators = []
 
@@ -19,7 +47,21 @@ class AssetSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         errors = {}
-        for field in ("version_no", "uploaded_by", "file_type", "file_size", "sha256"):
+        for field in (
+            "version_no",
+            "uploaded_by",
+            "file_type",
+            "file_size",
+            "sha256",
+            "processing_status",
+            "processing_detail",
+            "processing_updated_at",
+            "processing_attempts",
+            "processing_token",
+            "processing_lease_until",
+            "storage_location",
+            "storage_key",
+        ):
             if field in self.initial_data:
                 errors[field] = "This field is determined by the server."
         code = attrs.get("code")
@@ -40,6 +82,9 @@ class AssetSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data.update(signed_media_url(instance, self.context.get("request")))
+        if instance.processing_status == Asset.ProcessingStatus.APPROVED and not instance.is_published:
+            data["processing_status"] = Asset.ProcessingStatus.ERROR
+            data["processing_detail"] = "The stored file reference needs repair before this asset is available."
         return data
 
 
@@ -47,5 +92,3 @@ class TagSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tags
         fields = ["id", "title"]
-
-

@@ -14,7 +14,7 @@ export default function NavBar({ items = [] }) {
   const current = items.find((item) => item.page === path)?.title || "";
   return (
     <>
-      <Flex py="20px" gap="20px" align="center" justify="space-between" bg="white" wrap={{ base: "wrap", md: "nowrap" }}>
+      <Flex py="5" gap="4" align="center" justify="space-between" bg="white" wrap={{ base: "wrap", md: "nowrap" }}>
         <Link href="/editor/home" aria-label="Digital asset library">
           <Image src={Logo.src ?? Logo} alt="ManticAI" h="40px" w="auto" />
         </Link>
