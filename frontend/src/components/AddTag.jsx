@@ -36,13 +36,13 @@ export default function AddTag() {
     }} closeOnEscape={!saving} closeOnInteractOutside={!saving} lazyMount unmountOnExit>
       <Dialog.Trigger asChild><Button size="xs" bg="blue.700" color="white"><LuPlus />New Tag</Button></Dialog.Trigger>
       <Portal><Dialog.Backdrop /><Dialog.Positioner>
-        <Dialog.Content as="form" onSubmit={submit} w="calc(100% - 2rem)">
+        <Dialog.Content colorPalette="gray" as="form" onSubmit={submit} w="calc(100% - 2rem)">
           <Dialog.Header><Dialog.Title>Add New Tag</Dialog.Title></Dialog.Header>
           <Dialog.Body>
             <Field.Root><Field.Label>Tag Name</Field.Label>
               <Input placeholder="Enter your tag name" required maxLength={50} value={title} onChange={(event) => setTitle(event.target.value)} disabled={saving} />
             </Field.Root>
-            {error && <Text role="alert" color="red.600">{error}</Text>}
+            {error && <Text role="alert" color="fg.error">{error}</Text>}
           </Dialog.Body>
           <Dialog.Footer>
             <Dialog.ActionTrigger asChild><Button type="button" variant="surface" colorPalette="gray" disabled={saving}>Cancel</Button></Dialog.ActionTrigger>

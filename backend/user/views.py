@@ -47,6 +47,16 @@ class UserViewSet(viewsets.ModelViewSet):
         SessionAuthentication().enforce_csrf(request)
         return super().create(request, *args, **kwargs)
 
+    def perform_create(self, serializer):
+        with transaction.atomic():
+            user = serializer.save()
+            event("account_created", target=user, request=self.request)
+
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            event("account_deleted", self.request.user, target=instance)
+            instance.delete()
+
     def get_throttles(self):
         throttles = super().get_throttles()
         if self.action == "create":
@@ -69,6 +79,7 @@ class UserViewSet(viewsets.ModelViewSet):
             valid = serializer.is_valid()
             if valid:
                 serializer.save()
+                event("account_updated", request.user, target=instance)
         if not valid:
             raise serializers.ValidationError(serializer.errors)
         return Response(serializer.data)
@@ -110,18 +121,24 @@ class UserViewSet(viewsets.ModelViewSet):
         value = serializers.ChoiceField(choices=["Viewer", "Editor", "Admin"]).run_validation(request.data.get("role"))
         group = Group.objects.get(name=value)
         # Retain unrelated Django groups/model permissions; replace application roles.
-        user.groups.remove(*user.groups.filter(name__in=["Viewer", "Editor", "Admin"]))
-        user.groups.add(group)
-        event("role_changed", request.user, target=user)
+        roles = user.groups.filter(name__in=["Viewer", "Editor", "Admin"])
+        if list(roles.values_list("name", flat=True)) != [value]:
+            previous_role = application_role(user)
+            user.groups.remove(*roles)
+            user.groups.add(group)
+            event("role_changed", request.user, target=user,
+                  metadata={"previous_role": previous_role, "role": application_role(user)})
         return Response({"id": str(user.pk), "role": value})
 
     @action(detail=True, methods=["patch"])
     @transaction.atomic
     def status(self, request, pk=None):
         user = self.get_object()
-        user.is_active = serializers.BooleanField().run_validation(request.data.get("is_active"))
-        user.save(update_fields=["is_active"])
-        event("account_status_changed", request.user, target=user)
+        active = serializers.BooleanField().run_validation(request.data.get("is_active"))
+        if user.is_active != active:
+            user.is_active = active
+            user.save(update_fields=["is_active"])
+            event("account_enabled" if active else "account_disabled", request.user, target=user)
         return Response({"id": str(user.pk), "is_active": user.is_active})
 
 

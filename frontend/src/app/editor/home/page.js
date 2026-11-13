@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { Text } from "@chakra-ui/react";
+import { Heading, Text } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 import EditorLayout from "@/components/layouts/EditorLayout";
 import AssetCard from "@/components/AssetCard";
@@ -16,7 +16,7 @@ export default function EditorHome() {
 
   return (
     <EditorLayout>
-      <h1><b>Digital Assets</b></h1>
+      <Heading>Digital Assets</Heading>
       {session.ready && session.authenticated
         ? <AssetCard />
         : <Text role="status" py="6">Loading your workspace…</Text>}

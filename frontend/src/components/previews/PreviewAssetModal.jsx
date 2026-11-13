@@ -18,13 +18,13 @@ export default function PreviewAssetModal({ asset, onAssetDeleted, onAssetUpdate
       <Dialog.Trigger asChild><Button variant="surface">Preview</Button></Dialog.Trigger>
       <Portal>
         <Dialog.Backdrop /><Dialog.Positioner>
-          <Dialog.Content>
+          <Dialog.Content colorPalette="gray">
             <Dialog.Body>
               <Flex direction="column" gap="10px" padding="10px" alignItems="flex-start">
                 <Dialog.Title asChild><Heading size="2xl" fontWeight="bold" marginTop="20px" overflowWrap="anywhere">{asset.name}</Heading></Dialog.Title>
                 <Grid w="full" templateColumns={{ base: "minmax(0, 1fr)", xl: "minmax(0, 4fr) minmax(0, 3fr)" }} gap="20px">
                 <Box borderWidth="1px" rounded="md" minW="0" h={{ base: "300px", md: "480px", xl: "580px" }}
-                  bg={asset.file_type === "glb" ? "transparent" : "gray.100"}>
+                  bg={asset.file_type === "glb" ? "transparent" : "blue.50"}>
                   <PreviewAssetMedia asset={asset} modelOptions={modelOptions} />
                 </Box>
                 <PreviewAssetCardv2 asset={asset} isOpen={open} {...modelOptions}

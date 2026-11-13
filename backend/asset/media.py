@@ -1,7 +1,6 @@
 import re
 import time
 import hashlib
-import logging
 import struct
 
 from django.conf import settings
@@ -17,7 +16,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 
 from user.models import User
-from user.security import session_record
+from user.security import session_record, event
 from rest_framework.exceptions import AuthenticationFailed
 from .files import MIME_TYPES, detect_type, validate_glb, validate_mp4
 from .models import Asset
@@ -124,5 +123,7 @@ def asset_file(request, asset_id):
     response["X-Content-Type-Options"] = "nosniff"
     response["Content-Security-Policy"] = "default-src 'none'; sandbox"
     response["Referrer-Policy"] = "no-referrer"
-    logging.getLogger("dam.audit").info("event=asset_file_access actor=%s asset=%s status=%s", user.pk, asset.pk, response.status_code)
+    if request.method == "GET":
+        event("asset_downloaded" if attachment else "asset_previewed", user, target=asset, request=request,
+              metadata={"response_status": response.status_code, "bytes_served": int(response["Content-Length"])})
     return response

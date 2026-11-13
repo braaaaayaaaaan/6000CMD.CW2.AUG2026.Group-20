@@ -4,10 +4,11 @@ from django.utils.html import format_html
 
 from .media import signed_media_url
 from .models import Asset, AssetSeries, Tags
+from user.audit_signals import AuditAdminMixin
 
 
 @admin.register(Asset)
-class AssetAdmin(admin.ModelAdmin):
+class AssetAdmin(AuditAdminMixin, admin.ModelAdmin):
     list_display = ("name", "code", "version_no", "uploaded_by", "upload_datetime")
     search_fields = ("name", "code", "description")
     list_filter = ("file_type",)
@@ -42,5 +43,5 @@ class AssetAdmin(admin.ModelAdmin):
 
 
 @admin.register(Tags)
-class TagAdmin(admin.ModelAdmin):
+class TagAdmin(AuditAdminMixin, admin.ModelAdmin):
     search_fields = ("title",)

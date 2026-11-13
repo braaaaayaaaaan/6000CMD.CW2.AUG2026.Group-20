@@ -80,7 +80,7 @@ export default function AssetCard() {
       <br />
       {resource.loading && <Flex role="status" gap="2" align="center"><Spinner size="sm" />Loading assets…</Flex>}
       {resource.error && <Stack>
-        <Text role="alert" color="red.600">{resource.error}</Text>
+        <Text role="alert" color="fg.error">{resource.error}</Text>
         <Button alignSelf="start" onClick={resource.refresh}>Retry assets</Button>
       </Stack>}
       {!resource.loading && !resource.error && !assets.length && (
@@ -89,7 +89,7 @@ export default function AssetCard() {
       <Flex gap={31} direction="row" wrap="wrap" aria-busy={resource.loading}>
         {assets.map((asset) => (
           <Card.Root key={asset.id} w={{ base: "full", sm: "320px" }} maxW="full" variant="elevated">
-            <Card.Body gap="2" colorPalette="gray" minW="0">
+            <Card.Body gap="2" minW="0">
               <Stack>
                 <Box h="140px"><PreviewAssetMedia asset={asset} compact /></Box>
                 <Box>

@@ -215,6 +215,12 @@ mismatch, pause asset serving, investigate, and restore a trusted copy or upload
 validated replacement before reopening access. Hashing detects changes against a
 trusted baseline; it does not prove safety or protect a compromised database.
 
+For stale file references, including legacy `approved/...` paths with original
+files still under `uploads/`, run `python backend/manage.py repair_asset_paths`
+to preview recovery matches. Run it with `--apply` to update those references,
+then run `verify_asset_files`. Recovery requires an exact match to each asset's
+recorded SHA-256. Refresh the library page afterward to obtain new signed URLs.
+
 Back up PostgreSQL metadata **and** the entire private media directory as a
 coordinated set. Pause writes while taking the database snapshot/export and file
 snapshot (or use coordinated storage snapshots). Record the application/migration
@@ -225,3 +231,92 @@ using matching metadata and files; run integrity verification and check image,
 video, GLB and historical-version access before reopening writes. Database-only
 restoration produces missing-file references; file-only restoration leaves orphaned
 or missing metadata. Do not run orphan deletion until the restore is reconciled.
+
+## Security monitoring and auditing
+
+Administrators have **Security Dashboard** alongside Assets and Tag Management at
+`/editor/security`. Overview shows the last 24 hours by default, with 7 and 30 day
+options. Open Security Alerts counts all unresolved alerts, regardless of age.
+Security Alerts and Audit Logs have server filters, 40 row pagination and detail
+dialogs. Resolving an alert records the operator and time and creates one audit
+event. This never changes user access. Existing account lockouts remain independent
+of monitoring rules.
+
+The existing `user.security.event` entry point now writes selected events into
+`user.AuditEvent` and emits the existing safe `dam.audit` console entry. The former
+generic write-request logger is replaced with request context for meaningful
+events. Django Admin's existing LogEntry remains intact and projects selected
+account, permission, asset and tag changes into the same audit stream. Bulk admin
+deletions are supported. REST actions do not also create Django Admin LogEntry
+records, so these hooks do not double-log the same action. Direct SQL and arbitrary
+ORM scripts outside these application and admin hooks are not monitored.
+
+Events cover completed login, failed password sign in, logout, MFA verification,
+account creation and security changes, roles and admin permissions, asset upload,
+replacement, metadata changes, deletion, download and preview, meaningful
+authenticated access denials, tag changes and alert resolution. Failed sign in
+records retain a validated NFKC username using the existing case-sensitive login
+mechanism. Audit records retain the actor's UUID if the account is later deleted.
+IP context uses validated `REMOTE_ADDR`, never untrusted forwarding headers. A
+proxy deployment can therefore report its proxy address. No request bodies,
+cookies, auth headers, credentials, signed URLs or admin change-message text are
+copied. Metadata is selected through a typed allowlist.
+
+File events are recorded only after authentication, signed-link/session/file
+binding checks, private-file opening and response construction succeed. Each
+explicit attachment GET returning 200 or 206 counts as a download, including
+repeated downloads of one asset and successful Range requests. HEAD requests,
+link issuance, missing files, rejected links and invalid ranges do not count.
+Inline preview GETs have a separate informational event and do not trigger bulk
+download alerts. A successful server response indicates authorised delivery has
+started, not proof that a client saved every byte.
+
+`user/auditing.py` centrally defines the three synchronous rules. Five failed
+logins for one attempted username within ten minutes create a Medium alert.
+Twenty successful download responses for one user within five minutes create a
+High alert. Five relevant access denials for one user within ten minutes create a
+Medium alert. Detection counts use rolling windows. Deduplication uses fixed UTC
+buckets of the corresponding window length, with a database uniqueness constraint
+on rule, hashed subject and bucket start. Further qualifying events update the
+rolling count and most recent occurrence on that alert, even if it was resolved
+early. A new bucket permits a new alert. PostgreSQL transaction advisory locks
+serialize relevant event creation and counting for the same rule and subject.
+No worker service or new dependency is needed.
+
+All monitoring endpoints use the application's revocable JWT/cookie and verified
+session authentication, application Admin permission and no-store responses:
+
+- `GET /api/security/overview/?hours=24` with 24, 168 or 720 hours
+- `GET /api/security/alerts/` and `GET /api/security/alerts/{id}/`
+- `POST /api/security/alerts/{id}/resolve/` with existing cookie CSRF protection
+- `GET /api/security/audit-events/` and `GET /api/security/audit-events/{id}/`
+
+Lists use existing `count`, `next`, `previous`, `results` pagination. Both accept
+`search`, `severity`, `user` UUID, `start` and `end` ISO timestamps. Alerts also
+accept `alert_type` and `status`. Audit events also accept `event_type`, `category`,
+`outcome`, `resource_type` and `resource`. Audit search includes username, attempted
+identifier, event type and resource identifier. Alert date filters use the most
+recent detection. Audit dates use the event timestamp. The dashboard uses the
+existing Chakra blue and white theme, session/resource hooks and pagination.
+The activity bars and accessible counts table use no charting dependency.
+
+**Database migration status.**
+`user.0005_security_monitoring` creates AuditEvent and SecurityAlert with indexes
+and the deduplication constraint. It depends on `user.0004` and does not rewrite
+existing data. It was applied to the configured Supabase database on 13 November
+2026 after explicit approval. Other deployments must apply this migration before
+using the feature. Existing console history is not imported. Isolated tests apply
+migrations only to a disposable SQLite database.
+Deployment still needs PostgreSQL concurrency verification and an audit retention
+and backup policy. These records are not an external tamper-proof log service.
+
+Run the monitoring and full regression suites without deployment credentials:
+
+```powershell
+.\.venv\Scripts\python.exe backend/manage.py test user.test_monitoring --settings=backend.test_settings --noinput
+.\.venv\Scripts\python.exe backend/manage.py test user asset backend --settings=backend.test_settings --noinput
+.\.venv\Scripts\python.exe backend/manage.py makemigrations --check --dry-run --settings=backend.test_settings
+cd frontend
+npm.cmd run lint
+npm.cmd run build
+```

@@ -19,7 +19,7 @@ from rest_framework.test import APIClient
 
 from user import test_security as accounts
 from backend.middleware import RedactSignedMediaTokens
-from .files import validate_file
+from .files import file_digest, validate_file
 from .models import Asset
 
 
@@ -229,6 +229,75 @@ class AssetSecurityTests(TestCase):
             call_command("verify_asset_files", stdout=io.StringIO(), stderr=io.StringIO())
         asset.refresh_from_db()
         self.assertEqual(asset.sha256, hashlib.sha256(image_bytes()).hexdigest())
+
+    def test_repair_legacy_paths_by_digest_restores_previews_downloads_and_ranges(self):
+        result = self.upload(glb_bytes(), "model.glb").data
+        asset = Asset.objects.get(pk=result["id"])
+        original = asset.url.name
+        legacy = f"approved/{asset.pk.hex}/old-storage-key"
+        Asset.objects.filter(pk=asset.pk).update(url=legacy)
+        broken = self.client.get(f"/assets/{asset.pk}/").data
+        self.assertEqual(self.client.get(self.path(broken)).status_code, 404)
+
+        call_command("repair_asset_paths", stdout=io.StringIO())
+        asset.refresh_from_db()
+        self.assertEqual(asset.url.name, legacy)
+        call_command("repair_asset_paths", apply=True, stdout=io.StringIO())
+        asset.refresh_from_db()
+        self.assertEqual(asset.url.name, original)
+        self.assertEqual(asset.sha256, result["sha256"])
+        self.assertEqual(asset.version_no, result["version_no"])
+        self.assertEqual(self.client.get(self.path(broken)).status_code, 403)
+
+        refreshed = self.client.get(f"/assets/{asset.pk}/media-url/")
+        self.assertEqual(refreshed.status_code, 200)
+        path = self.path(refreshed.data)
+        self.assertEqual(self.read(self.client.get(path)), glb_bytes())
+        self.assertEqual(self.read(self.client.get(path + "&download=1")), glb_bytes())
+        response = self.client.get(path, HTTP_RANGE="bytes=0-7")
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(self.read(response), glb_bytes()[:8])
+        call_command("repair_asset_paths", apply=True, stdout=io.StringIO())
+        call_command("verify_asset_files", stdout=io.StringIO())
+
+    def test_repair_requires_a_matching_recorded_digest(self):
+        for digest in ("", "0" * 64):
+            with self.subTest(digest=digest):
+                asset = Asset.objects.get(pk=self.upload().data["id"])
+                legacy = f"approved/{asset.pk.hex}/missing"
+                Asset.objects.filter(pk=asset.pk).update(url=legacy, sha256=digest)
+                with self.assertRaises(CommandError):
+                    call_command("repair_asset_paths", apply=True, stdout=io.StringIO(), stderr=io.StringIO())
+                asset.refresh_from_db()
+                self.assertEqual(asset.url.name, legacy)
+                self.assertEqual(asset.sha256, digest)
+
+    def test_repair_recovers_missing_upload_paths_and_preserves_accessible_files(self):
+        first = Asset.objects.get(pk=self.upload().data["id"])
+        second = Asset.objects.get(pk=self.upload().data["id"])
+        first_path = first.url.name
+        Asset.objects.filter(pk=second.pk).update(url="uploads/missing.png")
+        call_command("repair_asset_paths", apply=True, stdout=io.StringIO())
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.url.name, first_path)
+        self.assertTrue(second.url.storage.exists(second.url.name))
+        call_command("verify_asset_files", stdout=io.StringIO())
+
+    def test_repair_preserves_a_concurrent_file_replacement(self):
+        asset = Asset.objects.get(pk=self.upload().data["id"])
+        Asset.objects.filter(pk=asset.pk).update(url="uploads/missing.png")
+
+        def replace_during_hash(file):
+            Asset.objects.filter(pk=asset.pk).update(url="uploads/replacement.png", sha256="1" * 64)
+            return file_digest(file)
+
+        with patch("asset.management.commands.repair_asset_paths.file_digest", side_effect=replace_during_hash):
+            with self.assertRaises(CommandError):
+                call_command("repair_asset_paths", apply=True, stdout=io.StringIO(), stderr=io.StringIO())
+        asset.refresh_from_db()
+        self.assertEqual(asset.url.name, "uploads/replacement.png")
+        self.assertEqual(asset.sha256, "1" * 64)
 
     def test_multiple_files_and_client_digest_are_rejected(self):
         result = self.client.post("/assets/", {"name": "Bad", "description": "Bad",

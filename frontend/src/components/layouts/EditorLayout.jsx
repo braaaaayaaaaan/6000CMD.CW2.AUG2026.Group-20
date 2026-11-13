@@ -1,20 +1,24 @@
 "use client";
 
 import { Container, Flex, Box } from "@chakra-ui/react";
-import { FaFolderOpen } from "react-icons/fa6";
+import { FaFolderOpen, FaShieldHalved } from "react-icons/fa6";
 import { IoPricetagsSharp } from "react-icons/io5";
 import NavBar from "../NavBar";
 import useBrowserSession from "@/hooks/useBrowserSession";
 
-export default function EditorLayout({ children }) {
+export default function EditorLayout({ children, wide = false }) {
   const session = useBrowserSession();
-  const items = [{ title: "Assets", page: "/editor/home", icon: <FaFolderOpen /> }];
+  const items = [];
+  items.push({ title: "Assets", page: "/editor/home", icon: <FaFolderOpen /> });
   if (session.ready && ["Editor", "Admin"].includes(session.group)) {
     items.push({ title: "Tag Management", page: "/editor/tag-management", icon: <IoPricetagsSharp /> });
   }
+  if (session.ready && session.group === "Admin") {
+    items.push({ title: "Security Dashboard", page: "/editor/security", icon: <FaShieldHalved /> });
+  }
   return (
     <>
-      <Container>
+      <Container colorPalette="gray" maxW={wide ? "1440px" : undefined} px={wide ? { base: "4", md: "8", xl: "12" } : undefined}>
         <Flex direction="column" gapY="30px">
           <Box><NavBar items={items} /></Box>
           <Box minW="0">{children}</Box>

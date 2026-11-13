@@ -80,6 +80,13 @@ class CsrfView(AccountEndpoint):
 class NewTokenObtainPairView(AccountEndpoint):
     throttle_scope = "login"
 
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        if response.status_code == 401:
+            values = request.data if isinstance(request.data, Mapping) else {}
+            event("login_failed", request=request, account_identifier=values.get("username"))
+        return response
+
     @sensitive_variables()
     def post(self, request):
         user = password_user(text_field(request, "username", 150), text_field(request, "password", 256))
@@ -242,11 +249,19 @@ class MfaEnrolView(AccountEndpoint):
 class MfaVerifyView(AccountEndpoint):
     enrol = False
 
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        if response.status_code in {200, 401}:
+            event("mfa_verification_succeeded" if response.status_code == 200 else "mfa_verification_failed",
+                  getattr(request, "audit_mfa_user", None), request=request)
+        return response
+
     @sensitive_variables()
     def post(self, request):
         code = text_field(request, "code", 64)
         with transaction.atomic():
             user, payload = challenge_user(text_field(request, "challenge", 2048))
+            request.audit_mfa_user = user
             if self.enrol and payload.get("purpose") == "email-verify":
                 raise ValidationError("Verify your password before starting authenticator setup.")
             if self.enrol and user.mfa_enabled and payload.get("purpose") != "replace":
@@ -257,9 +272,10 @@ class MfaVerifyView(AccountEndpoint):
             if payload.get("purpose") == "email-verify":
                 accepted = user.check_password(text_field(request, "password", 256))
                 if not accepted:
-                    failed_attempt(user)
+                    failed_attempt(user, log_event=False)
             if accepted:
-                accepted = consume_factor(user, code, enrol=self.enrol)
+                # This endpoint records verification once after the transaction.
+                accepted = consume_factor(user, code, enrol=self.enrol, log_verification=False)
             if accepted:
                 if self.enrol:
                     activate_mfa(user)

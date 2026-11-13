@@ -2,7 +2,7 @@ import { Button, Flex, Spinner, Tag, Text } from "@chakra-ui/react";
 import { HiPlus } from "react-icons/hi";
 
 export default function AssetTag({ tags, loading, error, selectedTags, onSelectTag, disabled = false, onRetry }) {
-  if (loading) return <Spinner size="lg" color="purple.500" aria-label="Loading tags" />;
+  if (loading) return <Spinner size="lg" color="blue.700" aria-label="Loading tags" />;
   if (error) return (
     <Flex gap="2" align="center" wrap="wrap">
       <Text role="alert">{error}</Text>

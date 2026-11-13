@@ -77,11 +77,11 @@ export default function PreviewAssetCardv2({
                   <Dialog.Trigger asChild><Button variant="surface" colorPalette="red">Delete</Button></Dialog.Trigger>
                   <Portal>
                     <Dialog.Backdrop /><Dialog.Positioner>
-                      <Dialog.Content w="calc(100% - 2rem)">
+                      <Dialog.Content colorPalette="gray" w="calc(100% - 2rem)">
                         <Dialog.Header><Dialog.Title>Are you sure?</Dialog.Title></Dialog.Header>
                         <Dialog.Body>
                           <Text>This will permanently delete your asset and remove all of its versions from the system!</Text>
-                          {deleteError && <Text role="alert" color="red.600">{deleteError}</Text>}
+                          {deleteError && <Text role="alert" color="fg.error">{deleteError}</Text>}
                         </Dialog.Body>
                         <Dialog.Footer>
                           <Dialog.ActionTrigger asChild><Button variant="outline" disabled={deleting}>Cancel</Button></Dialog.ActionTrigger>
@@ -132,9 +132,9 @@ export default function PreviewAssetCardv2({
                           <Dialog.Root lazyMount unmountOnExit>
                             <Dialog.Trigger asChild><IconButton variant="plain" color="gray.400" minW="0" h="auto" _hover={{ color: "gray.500" }} aria-label={"Preview version " + version.version_no}><RxEyeOpen size={24} /></IconButton></Dialog.Trigger>
                             <Portal><Dialog.Backdrop /><Dialog.Positioner>
-                              <Dialog.Content maxW="760px" w="calc(100% - 2rem)">
-                                <Dialog.Header><Dialog.Title>{version.name}({version.version_no}).{version.file_type}<Text fontSize="sm" color="gray.500">Version {version.version_no}</Text></Dialog.Title></Dialog.Header>
-                                <Dialog.Body><Box borderWidth="1px" rounded="md" bg={version.file_type === "glb" ? "transparent" : "gray.100"} h={{ base: "280px", md: "460px" }}><PreviewAssetMedia asset={version} /></Box></Dialog.Body>
+                              <Dialog.Content colorPalette="gray" maxW="760px" w="calc(100% - 2rem)">
+                                <Dialog.Header><Dialog.Title>{version.name}({version.version_no}).{version.file_type}<Text fontSize="sm" color="fg.muted">Version {version.version_no}</Text></Dialog.Title></Dialog.Header>
+                                <Dialog.Body><Box borderWidth="1px" rounded="md" bg={version.file_type === "glb" ? "transparent" : "blue.50"} h={{ base: "280px", md: "460px" }}><PreviewAssetMedia asset={version} /></Box></Dialog.Body>
                                 <Dialog.CloseTrigger asChild><CloseButton size="sm" /></Dialog.CloseTrigger>
                               </Dialog.Content>
                             </Dialog.Positioner></Portal>

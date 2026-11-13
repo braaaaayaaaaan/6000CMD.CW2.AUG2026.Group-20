@@ -71,7 +71,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          <Dialog.Content as="form" onSubmit={submit} maxW="lg" w="calc(100% - 2rem)">
+          <Dialog.Content colorPalette="gray" as="form" onSubmit={submit} maxW="lg" w="calc(100% - 2rem)">
             <Dialog.Header><Dialog.Title>{asset ? "Update Asset File" : "Upload New Asset"}</Dialog.Title></Dialog.Header>
             <Dialog.Body pb="4">
               <Stack gap="4">
@@ -106,7 +106,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded }) {
                     selectedTags={selectedTags} onSelectTag={(id) => setSelectedTags((previous) =>
                       previous.includes(id) ? previous.filter((item) => item !== id) : [...previous, id])} />
                 </Field.Root>}
-                {saveError && <Text role="alert" color="red.600">{saveError}</Text>}
+                {saveError && <Text role="alert" color="fg.error">{saveError}</Text>}
               </Stack>
             </Dialog.Body>
             <Dialog.Footer>

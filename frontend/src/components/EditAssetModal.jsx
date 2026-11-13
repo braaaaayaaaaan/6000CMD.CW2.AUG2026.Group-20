@@ -114,7 +114,7 @@ export default function EditAssetModal({ asset, onAssetUpdated }) {
           <Dialog.Backdrop />
 
           <Dialog.Positioner>
-            <Dialog.Content as="form" onSubmit={handleAssetFileEdit} maxW="lg" w="calc(100% - 2rem)">
+            <Dialog.Content colorPalette="gray" as="form" onSubmit={handleAssetFileEdit} maxW="lg" w="calc(100% - 2rem)">
               <Dialog.Header>
                 <Dialog.Title>Edit Asset: {asset.name}</Dialog.Title>
               </Dialog.Header>
@@ -160,7 +160,7 @@ export default function EditAssetModal({ asset, onAssetUpdated }) {
                       onSelectTag={handleTagSelect}
                     />
                   </Field.Root>
-                  {saveError && <Text role="alert" color="red.600">{saveError}</Text>}
+                  {saveError && <Text role="alert" color="fg.error">{saveError}</Text>}
                 </Stack>
               </Dialog.Body>
               <Dialog.CloseTrigger asChild>

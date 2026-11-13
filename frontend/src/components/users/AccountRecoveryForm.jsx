@@ -74,22 +74,22 @@ export default function AccountRecoveryForm({ mode }) {
       {!ready && <Text role="status">Loading secure form...</Text>}
       {ready && verification && !verified && <Text color="fg.muted" fontSize="xs" lineHeight="tall" textWrap="balance">
         {verifying ? "Confirm your email address to finish setting up your account." : email ? "Check your inbox and open the verification link to activate your account." : "Open the verification link in your inbox, or sign in to request a new link."}
-        {email && <Text as="span" display="block" fontSize="sm" fontWeight="medium" bg="#FFF7E6" color="#6B5526" borderWidth="1px" borderColor="#EAD8AD" borderRadius="md" px="4" py="3" mt="3" overflowWrap="anywhere">{email}</Text>}
+        {email && <Text as="span" display="block" fontSize="sm" fontWeight="medium" bg="blue.50" color="blue.700" borderWidth="1px" borderColor="blue.200" borderRadius="md" px="4" py="3" mt="3" overflowWrap="anywhere">{email}</Text>}
       </Text>}
       {fields.map((field) => {
         const Component = field === "email" ? Input : PasswordInput;
         return <Field.Root key={field}><Field.Label>{field === "email" ? "Email" : field === "password1" ? "New Password" : "Confirm New Password"}</Field.Label>
           <Component required type={field === "email" ? "email" : "password"} autoComplete={field === "email" ? "email" : "new-password"}
             aria-describedby={mode === "reset-password" ? "reset-password-requirements" : undefined}
-            borderColor={forgotPassword ? "gray.300" : undefined} textAlign={forgotPassword ? "left" : undefined}
+            borderColor={forgotPassword ? "border.emphasized" : undefined} textAlign={forgotPassword ? "left" : undefined}
             minLength={field === "email" ? undefined : 12} maxLength={field === "email" ? 254 : 256}
             value={values[field] || ""} disabled={!ready || saving} onChange={(event) => setValues((previous) => ({ ...previous, [field]: event.target.value }))} />
         </Field.Root>;
       })}
       {mode === "reset-password" && <PasswordStrengthFeedback id="reset-password-requirements" password={values.password1} confirmation={values.password2} />}
-      {error && <Text role="alert" color="red.600">{error}</Text>}
+      {error && <Text role="alert" color="fg.error">{error}</Text>}
       {message && <Text role="status">{message}</Text>}
-      {!verified && (!verification || verifying || email) && <Button type="submit" variant={forgotPassword ? "outline" : undefined} bg="blue.700" color="white" loading={saving} loadingText={forgotPassword ? "Sending..." : undefined} disabled={!ready || saving}>
+      {!verified && (!verification || verifying || email) && <Button type="submit" loading={saving} loadingText={forgotPassword ? "Sending..." : undefined} disabled={!ready || saving}>
         {verifying ? "Verify Email" : verification ? "Resend Verification Email" : forgotPassword ? "Send Reset Link" : "Continue"}
       </Button>}
       {verifying && email && !verified && <Button type="button" variant="outline" color="blue.700" disabled={saving} onClick={(event) => submit(event, true)}>Resend Verification Email</Button>}
