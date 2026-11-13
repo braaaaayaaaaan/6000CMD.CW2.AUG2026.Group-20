@@ -18,7 +18,7 @@ export default function EditorHome() {
     <EditorLayout>
       {session.ready && session.authenticated
         ? <AssetCard />
-        : <Text role="status" py="6">Loading your workspace…</Text>}
+        : <Text role="status" py="6">Loading Your Workspace…</Text>}
     </EditorLayout>
   );
 }

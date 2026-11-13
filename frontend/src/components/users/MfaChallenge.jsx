@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { api, errorMessage } from "@/utils/api";
 import { PasswordInput } from "@/components/ui/password-input";
 
-export default function MfaChallenge({ challenge, enrolmentRequired, passwordRequired = false, initialSetup, onComplete, onCancel, cancelLabel = "Back to Login" }) {
+export default function MfaChallenge({ challenge, enrolmentRequired, passwordRequired = false, initialSetup, onComplete, onCancel, cancelLabel = "Back To Login" }) {
   const [setup, setSetup] = useState(initialSetup || null);
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
@@ -49,14 +49,14 @@ export default function MfaChallenge({ challenge, enrolmentRequired, passwordReq
   return <form method="post" onSubmit={submit}><Stack gap="3" textAlign="left">
     <Heading size="lg" color="blue.700" textAlign="center">{enrolmentRequired ? "Authenticator Setup" : "Authenticator Verification"}</Heading>
     <Text color="fg.muted" fontSize="sm" textAlign="center">{needsPasswordForSetup ? "Confirm your account password to securely prepare your QR code." : enrolmentRequired ? "Scan the QR code with your authenticator app, then enter its six-digit code." : "Enter the current code from your authenticator app, or use a previously issued recovery code."}</Text>
-    {enrolmentRequired && !setup && !error && !needsPasswordForSetup && <Text role="status" textAlign="center">Preparing your QR code...</Text>}
+    {enrolmentRequired && !setup && !error && !needsPasswordForSetup && <Text role="status" textAlign="center">Preparing Your QR Code...</Text>}
     <Grid templateColumns={setup ? { base: "minmax(0, 1fr)", md: "minmax(0, 1fr) minmax(0, 1fr)" } : "minmax(0, 1fr)"} gap={{ base: "4", md: "6" }} alignItems="center">
     {setup && <Stack gap="2" minW="0">
       <Box p="2" bg="white" borderWidth="1px" borderColor="gray.300" borderRadius="lg" alignSelf="center" maxW="full">
         <Image src={setup.qr_code} alt="Scan this QR code with your authenticator app" w="180px" maxW="full" aspectRatio="1" />
       </Box>
       <Text fontSize="xs" color="fg.muted" textAlign="center">New codes appear every 30 seconds.</Text>
-      <Box as="details" fontSize="sm"><Box as="summary" cursor="pointer" color="blue.700">Cannot scan the QR code?</Box>
+      <Box as="details" fontSize="sm"><Box as="summary" cursor="pointer" color="blue.700">Cannot Scan The QR Code?</Box>
         <Text mt="2">Add an account manually in your app using this setup key:</Text>
         <Text mt="1" fontFamily="mono" overflowWrap="anywhere">{setup.secret}</Text>
       </Box>
@@ -67,11 +67,11 @@ export default function MfaChallenge({ challenge, enrolmentRequired, passwordReq
       <Field.HelperText>Confirm your password to finish signing in securely.</Field.HelperText>
     </Field.Root>}
     {!needsPasswordForSetup && <Field.Root gap="1"><Field.Label>{useRecoveryCode ? "Previously Issued Recovery Code" : "Authenticator Code"}</Field.Label>
-      <Input autoComplete="one-time-code" inputMode={useRecoveryCode ? "text" : "numeric"} pattern={useRecoveryCode ? undefined : "[0-9]{6}"} minLength={useRecoveryCode ? 1 : 6} maxLength={useRecoveryCode ? 64 : 6} borderColor="gray.300" placeholder={useRecoveryCode ? "Recovery code" : "6-digit code"} value={code} onChange={(event) => setCode(useRecoveryCode ? event.target.value : event.target.value.replace(/\D/g, "").slice(0, 6))} required disabled={saving || (enrolmentRequired && !setup)} />
+      <Input autoComplete="one-time-code" inputMode={useRecoveryCode ? "text" : "numeric"} pattern={useRecoveryCode ? undefined : "[0-9]{6}"} minLength={useRecoveryCode ? 1 : 6} maxLength={useRecoveryCode ? 64 : 6} borderColor="gray.300" placeholder={useRecoveryCode ? "Recovery Code" : "6-Digit Code"} value={code} onChange={(event) => setCode(useRecoveryCode ? event.target.value : event.target.value.replace(/\D/g, "").slice(0, 6))} required disabled={saving || (enrolmentRequired && !setup)} />
     </Field.Root>}
-    {!enrolmentRequired && <Button type="button" variant="plain" color="blue.700" onClick={() => { setUseRecoveryCode(!useRecoveryCode); setCode(""); }} disabled={saving}>{useRecoveryCode ? "Use authenticator app" : "Use a previously issued recovery code"}</Button>}
+    {!enrolmentRequired && <Button type="button" variant="plain" color="blue.700" onClick={() => { setUseRecoveryCode(!useRecoveryCode); setCode(""); }} disabled={saving}>{useRecoveryCode ? "Use Authenticator App" : "Use A Previously Issued Recovery Code"}</Button>}
     {error && <Text role="alert" color="red.600">{error}</Text>}
-    <Button type="submit" variant="outline" bg="blue.700" color="white" loading={saving} loadingText="Verifying..." disabled={saving || (enrolmentRequired && !setup && !needsPasswordForSetup)}>{needsPasswordForSetup ? "Continue to QR Setup" : enrolmentRequired ? "Verify and Continue" : "Verify and Sign In"}</Button>
+    <Button type="submit" variant="outline" bg="blue.700" color="white" loading={saving} loadingText="Verifying..." disabled={saving || (enrolmentRequired && !setup && !needsPasswordForSetup)}>{needsPasswordForSetup ? "Continue To QR Setup" : enrolmentRequired ? "Verify And Continue" : "Verify And Sign In"}</Button>
     {onCancel && <Button type="button" variant="outline" borderColor="blue.700" color="blue.700" onClick={onCancel} disabled={saving}>{cancelLabel}</Button>}
     </Stack>
     </Grid>

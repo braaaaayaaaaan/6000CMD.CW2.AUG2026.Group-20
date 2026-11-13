@@ -38,9 +38,9 @@ export default function AccountSecurity() {
     <Text fontWeight="bold">Authenticator Security</Text>
     <Text>Authenticator security is required for every account. Use the current six-digit code from your app to sign in.</Text>
     <Field.Root><Field.Label>Current Password</Field.Label><PasswordInput autoComplete="current-password" maxLength={256} value={password} onChange={(event) => setPassword(event.target.value)} disabled={saving} /></Field.Root>
-    {session.mfa_enabled && <Field.Root><Field.Label>Authenticator or Previously Issued Recovery Code</Field.Label><Input borderColor="gray.300" autoComplete="one-time-code" maxLength={64} value={code} onChange={(event) => setCode(event.target.value)} disabled={saving} /></Field.Root>}
+    {session.mfa_enabled && <Field.Root><Field.Label>Authenticator Or Previously Issued Recovery Code</Field.Label><Input borderColor="gray.300" autoComplete="one-time-code" maxLength={64} value={code} onChange={(event) => setCode(event.target.value)} disabled={saving} /></Field.Root>}
     {error && <Text role="alert" color="red.600">{error}</Text>}
-    {!session.mfa_enabled && <Button variant="outline" bg="blue.700" color="white" onClick={() => action("setup")} disabled={saving || !password}>Set up authenticator</Button>}
+    {!session.mfa_enabled && <Button variant="outline" bg="blue.700" color="white" onClick={() => action("setup")} disabled={saving || !password}>Set Up Authenticator</Button>}
     {session.mfa_enabled && <><Text fontSize="sm">To replace an authenticator, provide a current code or do so within five minutes of signing in with MFA.</Text>
       <Button variant="outline" bg="blue.700" color="white" onClick={() => action("replace")} disabled={saving || !password}>Replace Authenticator</Button></>}
     <Button variant="outline" color="blue.700" borderColor="blue.700" onClick={() => action("logout-all")} loading={saving}>Log Out All Devices</Button>

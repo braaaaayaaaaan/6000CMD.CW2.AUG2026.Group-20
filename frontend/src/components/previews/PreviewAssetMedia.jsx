@@ -103,7 +103,7 @@ export default function PreviewAssetMedia({
     return (
       <Stack p="3" h="full" justify="center" bg={compact ? "bg.muted" : undefined} rounded="md">
         {compact ? <Text fontSize="sm" color="fg.muted" textAlign="center">
-          {isAssetProcessing(asset) ? "Preview available when ready" : "Preview unavailable"}
+          {isAssetProcessing(asset) ? "Preview Available When Ready" : "Preview Unavailable"}
         </Text> : <AssetProcessingStatus asset={asset} showDetail />}
       </Stack>
     );
@@ -112,12 +112,12 @@ export default function PreviewAssetMedia({
       <Stack>
         <Text role="alert">{media.error}</Text>
         <Button size="sm" onClick={() => setAttempt((value) => value + 1)}>
-          Retry preview
+          Retry Preview
         </Button>
       </Stack>
     );
   if (!src)
-    return <Stack align="center" justify="center" h="full" role="status"><Spinner size="sm" /><Text fontSize="sm">Loading preview…</Text></Stack>;
+    return <Stack align="center" justify="center" h="full" role="status"><Spinner size="sm" /><Text fontSize="sm">Loading Preview…</Text></Stack>;
   if (["png", "jpg"].includes(asset.file_type)) {
     return (
       <PreviewImageAsset

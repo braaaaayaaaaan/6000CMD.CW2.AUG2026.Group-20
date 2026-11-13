@@ -2,11 +2,11 @@ import { Button, Flex, Spinner, Tag, Text } from "@chakra-ui/react";
 import { HiPlus } from "react-icons/hi";
 
 export default function AssetTag({ tags, loading, error, selectedTags, onSelectTag, disabled = false, onRetry }) {
-  if (loading) return <Spinner size="lg" color="purple.500" aria-label="Loading tags" />;
+  if (loading) return <Spinner size="lg" color="purple.500" aria-label="Loading Tags" />;
   if (error) return (
     <Flex gap="2" align="center" wrap="wrap">
       <Text role="alert">{error}</Text>
-      {onRetry && <Button type="button" size="xs" variant="outline" onClick={onRetry}>Retry tags</Button>}
+      {onRetry && <Button type="button" size="xs" variant="outline" onClick={onRetry}>Retry Tags</Button>}
     </Flex>
   );
   return (
@@ -21,7 +21,7 @@ export default function AssetTag({ tags, loading, error, selectedTags, onSelectT
           {!selectedTags.includes(tag.id) && <HiPlus style={{ marginRight: 4 }} />}
           <Tag.Label>{tag.title}</Tag.Label>
         </Tag.Root>
-      )) : <Text>No tags found!</Text>}
+      )) : <Text>No Tags Found!</Text>}
     </Flex>
   );
 }

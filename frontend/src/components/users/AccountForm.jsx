@@ -82,7 +82,7 @@ export default function AccountForm({ signup = false }) {
       <Box w={challenge?.enrolment_required ? "2xl" : "lg"} maxW="full" p={signup ? { base: 6, md: 8 } : challenge ? { base: 5, md: 6 } : 10} borderWidth="1px" borderRadius="lg" boxShadow={signup ? "sm" : "lg"} textAlign="center">
         <Heading size={challenge ? "lg" : "2xl"} color="blue.700" fontWeight="bold" marginBottom={signup || challenge ? "12px" : "50px"}>
           <Image src={Logo.src ?? Logo} alt="logo" w={signup ? "160px" : challenge ? "clamp(160px, 28dvh, 240px)" : undefined} maxW="full" mx="auto" mb={signup ? "3" : undefined} />
-          {signup ? "Create your account" : "Digital Asset Management System"}
+          {signup ? "Create Your Account" : "Digital Asset Management System"}
         </Heading>
         {challenge ? <MfaChallenge challenge={challenge.challenge} enrolmentRequired={challenge.enrolment_required}
           onComplete={complete} onCancel={() => setChallenge(null)} /> : <form method="post" onSubmit={submit}><Fieldset.Root size="lg" invalid={Boolean(error)} disabled={!ready || saving}>
@@ -107,13 +107,13 @@ export default function AccountForm({ signup = false }) {
           })}
           </Grid>
           {signup && <PasswordStrengthFeedback id="signup-password-requirements" password={values.password1} confirmation={values.password2} compact />}
-          <Button type="submit" marginTop={signup ? "0" : "30px"} variant="outline" bg="blue.700" color="white" loading={saving} disabled={!ready || saving} loadingText={signup ? "Creating account…" : "Logging in…"}>
+          <Button type="submit" marginTop={signup ? "0" : "30px"} variant="outline" bg="blue.700" color="white" loading={saving} disabled={!ready || saving} loadingText={signup ? "Creating Account…" : "Logging In…"}>
             {signup ? "Sign Up" : "Login"}
           </Button>
           {error && <Fieldset.ErrorText role="alert" mt={signup ? 3 : undefined}>{error}</Fieldset.ErrorText>}
           <Box fontSize="sm">
             <Link variant="underline" href={signup ? "/login" : "/signup"}>
-              {signup ? "Already have an account? Log in!" : "Don’t have an account? Sign up!"}
+              {signup ? "Already Have An Account? Log In!" : "Don’t Have An Account? Sign Up!"}
             </Link>
           </Box>
           </Fieldset.Content>

@@ -42,7 +42,7 @@ export function UploadStatusTracker({ assetId, enabled, onStatus }) {
     enabled,
     pollWhile: keepWatchingUpload,
     onData: (asset) => onStatus([asset]),
-    failureMessage: "Status is unavailable. Refresh Manage uploads to check again.",
+    failureMessage: "Status is unavailable. Refresh Manage Uploads to check again.",
   });
   return null;
 }
@@ -88,7 +88,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded, defaultOpen =
     setProgress(null);
     const controller = new AbortController();
     request.current = controller;
-    const toastId = toaster.create({ title: file?.name, description: "Uploading file…", type: "loading" });
+    const toastId = toaster.create({ title: file?.name, description: "Uploading File…", type: "loading" });
     activeToast.current = toastId;
     let uploaded = null;
     try {
@@ -153,7 +153,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded, defaultOpen =
           color={asset ? undefined : "white"}
         >
           {!asset && <MdCloudUpload />}
-          {asset ? "New version" : "Upload a file"}
+          {asset ? "New Version" : "Upload A File"}
         </Button>
       </Dialog.Trigger>
       <Portal>
@@ -168,7 +168,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded, defaultOpen =
           >
             <Dialog.Header pb="2" pr="12">
               <Dialog.Title>
-                {asset ? "Upload a new version" : "Upload a file"}
+                {asset ? "Upload A New Version" : "Upload A File"}
               </Dialog.Title>
             </Dialog.Header>
             <Dialog.Body pt="2" pb="6">
@@ -228,7 +228,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded, defaultOpen =
                     <Field.Root>
                       <Field.Label>Name</Field.Label>
                       <Input
-                        placeholder="Give this asset a clear name"
+                        placeholder="Give This Asset A Clear Name"
                         value={name}
                         onChange={(event) => setName(event.target.value)}
                         required
@@ -239,7 +239,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded, defaultOpen =
                     <Field.Root>
                       <Field.Label>Description</Field.Label>
                       <Textarea
-                        placeholder="Add a short description to help people find this file"
+                        placeholder="Add A Short Description To Help People Find This File"
                         value={description}
                         onChange={(event) => setDescription(event.target.value)}
                         required
@@ -252,10 +252,10 @@ export default function UploadAssetModal({ asset, onAssetUploaded, defaultOpen =
                 {saving && (
                   <Stack gap="2" role="status" aria-live="polite">
                     <Text fontSize="sm">
-                      {progress === 100 ? "Finishing upload… Waiting for the server." : "Uploading file…"}
+                      {progress === 100 ? "Finishing Upload… Waiting For The Server." : "Uploading File…"}
                       {progress !== null && ` ${progress}%`}
                     </Text>
-                    <Progress.Root value={progress} size="xs" colorPalette="blue" aria-label="File upload progress">
+                    <Progress.Root value={progress} size="xs" colorPalette="blue" aria-label="File Upload Progress">
                       <Progress.Track rounded="full"><Progress.Range
                         css={{ '@media (prefers-reduced-motion: no-preference)': { transition: 'width 150ms ease' }, '@media (prefers-reduced-motion: reduce)': { animation: 'none !important' } }}
                       /></Progress.Track>
@@ -264,7 +264,7 @@ export default function UploadAssetModal({ asset, onAssetUploaded, defaultOpen =
                 )}
                 {!asset && (
                   <Field.Root>
-                    <Field.Label>Tags (optional)</Field.Label>
+                    <Field.Label>Tags (Optional)</Field.Label>
                     <AssetTag
                       tags={tags}
                       loading={loading}

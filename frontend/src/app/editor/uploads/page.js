@@ -8,7 +8,7 @@ import AssetCard from "@/components/AssetCard";
 import useBrowserSession from "@/hooks/useBrowserSession";
 
 function LoadingUploads() {
-  return <Flex role="status" align="center" gap="3" py="8"><Spinner size="sm" /><Text>Loading uploads…</Text></Flex>;
+  return <Flex role="status" align="center" gap="3" py="8"><Spinner size="sm" /><Text>Loading Uploads…</Text></Flex>;
 }
 
 function Uploads() {

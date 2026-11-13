@@ -69,24 +69,24 @@ export default function TagManagement() {
       <Heading>Tag Management</Heading>
       <Stack>
         <Box display="flex" justifyContent="flex-end"><AddTag /></Box>
-        {usage.error && <Stack><Text role="alert">Usage counts: {usage.error}</Text><Button alignSelf="start" variant="outline" onClick={usage.refresh}>Retry counts</Button></Stack>}
+        {usage.error && <Stack><Text role="alert">Usage Counts: {usage.error}</Text><Button alignSelf="start" variant="outline" onClick={usage.refresh}>Retry Counts</Button></Stack>}
         {actionError && !deleting && <Text role="alert" color="red.600">{actionError}</Text>}
         <Box overflowX="auto">
           <Table.Root variant="line">
             <Table.Header><Table.Row><Table.ColumnHeader>Tag Name</Table.ColumnHeader><Table.ColumnHeader textAlign="center">Usage Count</Table.ColumnHeader><Table.ColumnHeader textAlign="center">Actions</Table.ColumnHeader></Table.Row></Table.Header>
             <Table.Body>
               {loading ? (
-                <Table.Row><Table.Cell colSpan={3} textAlign="center"><Spinner size="lg" color="purple.500" aria-label="Loading tags" /></Table.Cell></Table.Row>
+                <Table.Row><Table.Cell colSpan={3} textAlign="center"><Spinner size="lg" color="purple.500" aria-label="Loading Tags" /></Table.Cell></Table.Row>
               ) : error ? (
                 <Table.Row><Table.Cell colSpan={3} textAlign="center" color="red.500">
-                  <Text role="alert">{error}</Text><Button size="xs" variant="outline" onClick={refresh}>Retry tags</Button>
+                  <Text role="alert">{error}</Text><Button size="xs" variant="outline" onClick={refresh}>Retry Tags</Button>
                 </Table.Cell></Table.Row>
               ) : rows.length ? rows.map((tag) => (
                 <Table.Row key={tag.id}>
                   <Table.Cell>
                     {editing?.id === tag.id
                       ? <Box as="form" id={"edit-tag-" + tag.id} onSubmit={save}>
-                          <Input size="sm" width="auto" aria-label="Tag name" required maxLength={50} value={editing.title} disabled={saving}
+                          <Input size="sm" width="auto" aria-label="Tag Name" required maxLength={50} value={editing.title} disabled={saving}
                             onChange={(event) => setEditing({ id: tag.id, title: event.target.value })} />
                         </Box>
                       : tag.title}
@@ -104,7 +104,7 @@ export default function TagManagement() {
                     </Flex>
                   </Table.Cell>
                 </Table.Row>
-              )) : <Table.Row><Table.Cell colSpan={3} textAlign="center">No tags found!</Table.Cell></Table.Row>}
+              )) : <Table.Row><Table.Cell colSpan={3} textAlign="center">No Tags Found!</Table.Cell></Table.Row>}
             </Table.Body>
           </Table.Root>
         </Box>
@@ -114,7 +114,7 @@ export default function TagManagement() {
         }} closeOnEscape={!saving} closeOnInteractOutside={!saving} lazyMount unmountOnExit>
           <Portal><Dialog.Backdrop /><Dialog.Positioner>
             <Dialog.Content w="calc(100% - 2rem)">
-              <Dialog.Header><Dialog.Title>Delete tag?</Dialog.Title></Dialog.Header>
+              <Dialog.Header><Dialog.Title>Delete Tag?</Dialog.Title></Dialog.Header>
               <Dialog.Body>
                 <Text>Remove “{deleting?.title}” and its associations? The assets will be kept.</Text>
                 {actionError && <Text role="alert" color="red.600">{actionError}</Text>}
@@ -128,7 +128,7 @@ export default function TagManagement() {
           </Dialog.Positioner></Portal>
         </Dialog.Root>
       </Stack>
-      </> : <Text role="status">Loading your workspace…</Text>}
+      </> : <Text role="status">Loading Your Workspace…</Text>}
     </EditorLayout>
   );
 }

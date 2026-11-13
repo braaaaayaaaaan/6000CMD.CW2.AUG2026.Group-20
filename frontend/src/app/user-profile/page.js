@@ -101,7 +101,7 @@ export default function UserProfile() {
                 <Portal>
                   <Dialog.Backdrop /><Dialog.Positioner>
                     <Dialog.Content w="calc(100% - 2rem)">
-                      <Dialog.Header><Dialog.Title>Are you sure?</Dialog.Title></Dialog.Header>
+                      <Dialog.Header><Dialog.Title>Are You Sure?</Dialog.Title></Dialog.Header>
                       <Dialog.Body>You will be logged out. Are you sure?</Dialog.Body>
                       <Dialog.Footer>
                         <Dialog.ActionTrigger asChild><Button variant="outline">Cancel</Button></Dialog.ActionTrigger>
@@ -115,24 +115,24 @@ export default function UserProfile() {
               <Box borderTopWidth="1px" width="100%" marginTop="40px" paddingTop="20px">
                 <Tabs.List width="100%">
                   <Tabs.Trigger value="info" width="100%">Personal Info</Tabs.Trigger>
-                  <Tabs.Trigger value="security" width="100%">Password and Security</Tabs.Trigger>
+                  <Tabs.Trigger value="security" width="100%">Password And Security</Tabs.Trigger>
                 </Tabs.List>
               </Box>
             </Card.Root>
           </GridItem>
           <GridItem colSpan={{ base: 1, lg: 3 }} minW="0">
             <Card.Root p="30px">
-              {(!session.ready || resource.loading) && <Box role="status"><Spinner size="sm" mr="2" />Loading profile…</Box>}
+              {(!session.ready || resource.loading) && <Box role="status"><Spinner size="sm" mr="2" />Loading Profile…</Box>}
               {session.ready && session.authenticated && !session.id && <Text role="alert">Your profile ID is unavailable. Log out and sign in again.</Text>}
-              {resource.error && <Stack><Text role="alert" color="red.600">{resource.error}</Text><Button variant="outline" onClick={resource.refresh}>Retry profile</Button></Stack>}
+              {resource.error && <Stack><Text role="alert" color="red.600">{resource.error}</Text><Button variant="outline" onClick={resource.refresh}>Retry Profile</Button></Stack>}
               {saveError && <Text role="alert" color="red.600" mb="4">{saveError}</Text>}
               <Tabs.Content value="info">
                 <Heading size="2xl">Personal Info</Heading>
                 <Box as="form" onSubmit={(event) => submit(event, "profile")} mt="20px" display="flex" flexDirection="column" gap="20px">
                   {[
-                    ["first_name", "First Name", "Enter your first name", "given-name"],
-                    ["last_name", "Last Name", "Enter your last name", "family-name"],
-                    ["email", "Email", "Your email", "email"],
+                    ["first_name", "First Name", "Enter Your First Name", "given-name"],
+                    ["last_name", "Last Name", "Enter Your Last Name", "family-name"],
+                    ["email", "Email", "Your Email", "email"],
                   ].map(([field, label, placeholder, autoComplete]) => (
                     <Field.Root key={field} gap="0">
                       <Field.Label fontWeight="bold" mb="4px">{label}</Field.Label>
@@ -147,12 +147,12 @@ export default function UserProfile() {
                 </Box>
               </Tabs.Content>
               <Tabs.Content value="security">
-                <Heading size="2xl">Password and Security</Heading>
+                <Heading size="2xl">Password And Security</Heading>
                 <Box as="form" onSubmit={(event) => submit(event, "password")} mt="20px" display="flex" flexDirection="column" gap="20px">
                   {[
-                    ["current", "Current Password", "Enter current password"],
-                    ["next", "New Password", "Enter new password"],
-                    ["confirm", "Confirm New Password", "Re-enter new password"],
+                    ["current", "Current Password", "Enter Current Password"],
+                    ["next", "New Password", "Enter New Password"],
+                    ["confirm", "Confirm New Password", "Re-Enter New Password"],
                   ].map(([field, label, placeholder]) => (
                     <Field.Root key={field} gap="0">
                       <Field.Label fontWeight="bold" mb="4px">{label}</Field.Label>

@@ -81,7 +81,7 @@ export default function PreviewAssetCardv2({
     ["Description", asset.description],
     ["Version", asset.version_no],
     ["Uploaded", formatDateTime(asset.upload_datetime)],
-    ["Uploaded by", asset.uploaded_by],
+    ["Uploaded By", asset.uploaded_by],
     ["Status", <AssetProcessingStatus key="status" asset={(history.data || []).find((version) => version.id === asset.id) || asset} showDetail />],
     ["Format", asset.file_type],
     ["Size", Number(asset.file_size).toFixed(2) + " MB"],
@@ -117,9 +117,9 @@ export default function PreviewAssetCardv2({
           <Tabs.List flexWrap="wrap">
             <Tabs.Trigger value="metadata">Details</Tabs.Trigger>
             {asset.file_type === "glb" && asset.processing_status === "approved" && (
-              <Tabs.Trigger value="advanced">3D view</Tabs.Trigger>
+              <Tabs.Trigger value="advanced">3D View</Tabs.Trigger>
             )}
-            <Tabs.Trigger value="version">Version history</Tabs.Trigger>
+            <Tabs.Trigger value="version">Version History</Tabs.Trigger>
           </Tabs.List>
           <Tabs.Content
             value="metadata"
@@ -190,7 +190,7 @@ export default function PreviewAssetCardv2({
                       <Dialog.Positioner>
                         <Dialog.Content w="calc(100% - 2rem)">
                           <Dialog.Header>
-                            <Dialog.Title>Are you sure?</Dialog.Title>
+                            <Dialog.Title>Are You Sure?</Dialog.Title>
                           </Dialog.Header>
                           <Dialog.Body>
                             <Text>
@@ -286,23 +286,23 @@ export default function PreviewAssetCardv2({
               onClick={history.refresh}
               disabled={history.loading}
             >
-              Refresh versions
+              Refresh Versions
             </Button>
             {history.loading && (
               <Box role="status">
                 <Spinner size="sm" mr="2" />
-                Loading versions…
+                Loading Versions…
               </Box>
             )}
             {history.error && (
               <Stack>
                 <Text role="alert">{history.error}</Text>
-                <Button onClick={history.refresh}>Retry versions</Button>
+                <Button onClick={history.refresh}>Retry Versions</Button>
               </Stack>
             )}
             {history.pollError && <Text role="status" fontSize="sm" color="fg.muted" mb="2">{history.pollError}</Text>}
             {!history.loading && !history.error && !history.data?.length && (
-              <Text>No versions found.</Text>
+              <Text>No Versions Found.</Text>
             )}
             <Box overflow="auto" maxH="460px">
               <Table.Root variant="outline">
@@ -336,7 +336,7 @@ export default function PreviewAssetCardv2({
                                 h="auto"
                                 _hover={{ color: "gray.500" }}
                                 aria-label={
-                                  "Preview version " + version.version_no
+                                  "Preview Version " + version.version_no
                                 }
                               >
                                 <RxEyeOpen size={24} />
@@ -387,7 +387,7 @@ export default function PreviewAssetCardv2({
                             h="auto"
                             _hover={{ color: "gray.500" }}
                             aria-label={
-                              "Download version " + version.version_no
+                              "Download Version " + version.version_no
                             }
                             onClick={() =>
                               download(

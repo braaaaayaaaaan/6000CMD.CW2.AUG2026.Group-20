@@ -173,7 +173,7 @@ export default function AssetCard({ uploadsView = false, openUpload = false }) {
         enabled={!managingUploads || !assets.some((asset) => asset.id === id)} onStatus={observeAssets} />)}
       <Flex align={{ base: "start", sm: "center" }} justify="space-between" gap="4" direction={{ base: "column", sm: "row" }}>
         <Stack gap="1">
-          <Heading as="h1" size="2xl">{managingUploads ? "Uploads" : "Asset library"}</Heading>
+          <Heading as="h1" size="2xl">{managingUploads ? "Uploads" : "Asset Library"}</Heading>
           <Text color="fg.muted" fontSize="sm">
             {managingUploads ? "Follow each asset's latest upload. Open Details for earlier versions." : "Browse and download files that are ready to use."}
           </Text>
@@ -181,34 +181,34 @@ export default function AssetCard({ uploadsView = false, openUpload = false }) {
         {editable && (managingUploads
           ? <UploadAssetModal onAssetUploaded={uploaded} defaultOpen={openUpload} />
           : <Button asChild size="sm" bg="blue.700" color="white" flexShrink="0">
-              <Link href="/editor/uploads?upload=1" onClick={() => dispatch(setKeyword(""))}><LuUpload />Upload a file</Link>
+              <Link href="/editor/uploads?upload=1" onClick={() => dispatch(setKeyword(""))}><LuUpload />Upload A File</Link>
             </Button>)}
       </Flex>
 
       <Flex align="center" justify="space-between" gap="3" wrap="wrap" borderBottomWidth="1px" pb="4">
-        <Text fontSize="sm" color="fg.muted" role="status">{count} {count === 1 ? "asset" : "assets"}{search && ` matching “${search}”`}</Text>
+        <Text fontSize="sm" color="fg.muted" role="status">{count} {count === 1 ? "Asset" : "Assets"}{search && ` Matching “${search}”`}</Text>
         <Flex align="center" gap="2" wrap="wrap">
           <BasicFilterComponent value={filter} onChange={setFilter} />
           <TagFilterComponent value={tagFilter} onChange={setTagFilter} />
-          {filtered && <Button size="sm" variant="plain" onClick={() => { dispatch(setKeyword("")); setFilter(""); setTagFilter(""); }}>Clear filters</Button>}
+          {filtered && <Button size="sm" variant="plain" onClick={() => { dispatch(setKeyword("")); setFilter(""); setTagFilter(""); }}>Clear Filters</Button>}
           <Button size="sm" minW="32" variant="outline" onClick={resource.refresh} loading={resource.loading} loadingText="Refreshing"><LuRefreshCw />Refresh</Button>
         </Flex>
       </Flex>
       {resource.error && <Stack align="start" gap="3" p="5" borderWidth="1px" rounded="lg">
-        <Text role="alert">{resource.error}</Text><Button size="sm" variant="outline" onClick={resource.refresh}>Try again</Button>
+        <Text role="alert">{resource.error}</Text><Button size="sm" variant="outline" onClick={resource.refresh}>Try Again</Button>
       </Stack>}
       {resource.pollError && <Text role="status" fontSize="sm" color="fg.muted">{resource.pollError}</Text>}
-      {resource.loading && !assets.length && <Flex role="status" align="center" justify="center" gap="3" py="12"><Spinner size="sm" />Loading {managingUploads ? "uploads" : "library"}…</Flex>}
+      {resource.loading && !assets.length && <Flex role="status" align="center" justify="center" gap="3" py="12"><Spinner size="sm" />Loading {managingUploads ? "Uploads" : "Library"}…</Flex>}
       {!resource.loading && !resource.error && !assets.length && <Stack align="center" textAlign="center" gap="3" py="14" px="5" borderWidth="1px" borderStyle="dashed" rounded="lg">
         <LuUpload size={28} aria-hidden="true" />
-        <Heading size="md">{filtered ? "No matching assets" : managingUploads ? "No uploads yet" : "Your library is waiting"}</Heading>
+        <Heading size="md">{filtered ? "No Matching Assets" : managingUploads ? "No Uploads Yet" : "Your Library Is Waiting"}</Heading>
         <Text color="fg.muted" fontSize="sm" maxW="md">{filtered ? "Try a different search or clear your filters." : managingUploads ? "Upload a file to get started. Its progress will appear here." : editable ? "Files appear here once they are ready. Check Uploads to follow their progress." : "There are no ready files yet. Please check back later."}</Text>
-        {filtered ? <Button variant="outline" size="sm" onClick={() => { dispatch(setKeyword("")); setFilter(""); setTagFilter(""); }}>Clear filters</Button>
-          : editable && !managingUploads && <Button asChild variant="outline" size="sm"><Link href="/editor/uploads">View uploads</Link></Button>}
+        {filtered ? <Button variant="outline" size="sm" onClick={() => { dispatch(setKeyword("")); setFilter(""); setTagFilter(""); }}>Clear Filters</Button>
+          : editable && !managingUploads && <Button asChild variant="outline" size="sm"><Link href="/editor/uploads">View Uploads</Link></Button>}
       </Stack>}
 
       {managingUploads ? <Stack gap="3" aria-busy={resource.loading}>
-        {assets.length > 0 && <Grid display={{ base: "none", lg: "grid" }} templateColumns="minmax(0, 1fr) minmax(230px, 0.8fr) 240px" gap="6" px="5" color="fg.muted" fontSize="xs" fontWeight="semibold" aria-hidden="true"><Text>FILE</Text><Text>STATUS</Text><Text textAlign="right">ACTIONS</Text></Grid>}
+        {assets.length > 0 && <Grid display={{ base: "none", lg: "grid" }} templateColumns="minmax(0, 1fr) minmax(230px, 0.8fr) 240px" gap="6" px="5" color="fg.muted" fontSize="xs" fontWeight="semibold" aria-hidden="true"><Text>File</Text><Text>Status</Text><Text textAlign="right">Actions</Text></Grid>}
         {assets.map((asset) => {
           const FileIcon = asset.file_type === "glb" ? LuBox : asset.file_type === "mp4" ? LuVideo : LuImage;
           return <Grid key={asset.id} as="article" aria-label={asset.name}
@@ -237,7 +237,7 @@ export default function AssetCard({ uploadsView = false, openUpload = false }) {
             <Flex gap="2" align="start" justify="space-between"><Card.Title fontSize="md" lineClamp={2} title={asset.name}>{asset.name}</Card.Title><Badge variant="subtle" flexShrink="0">{asset.file_type.toUpperCase()}</Badge></Flex>
             <Text fontSize="xs" color="fg.muted">{Number(asset.file_size).toFixed(2)} MB · Version {asset.version_no}</Text>
             <Card.Description fontSize="sm" lineClamp={2} minH="10">{asset.description}</Card.Description>
-            <Text fontSize="xs" color="fg.muted" truncate title={tagLabel(asset)}>{tagLabel(asset) === "None" ? "No tags" : tagLabel(asset)}</Text>
+            <Text fontSize="xs" color="fg.muted" truncate title={tagLabel(asset)}>{tagLabel(asset) === "None" ? "No Tags" : tagLabel(asset)}</Text>
           </Card.Body>
           <Card.Footer px="4" pb="4" pt="0" gap="2" mt="auto" flexWrap="wrap">
             {details(asset)}

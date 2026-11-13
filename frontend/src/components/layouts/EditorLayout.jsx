@@ -9,7 +9,7 @@ import useBrowserSession from "@/hooks/useBrowserSession";
 
 export default function EditorLayout({ children }) {
   const session = useBrowserSession();
-  const items = [{ title: "Asset library", page: "/editor/home", icon: <FaFolderOpen /> }];
+  const items = [{ title: "Asset Library", page: "/editor/home", icon: <FaFolderOpen /> }];
   if (session.ready && ["Editor", "Admin"].includes(session.group)) {
     items.push({ title: "Uploads", page: "/editor/uploads", icon: <LuUpload /> });
     items.push({ title: "Tag Management", page: "/editor/tag-management", icon: <IoPricetagsSharp /> });

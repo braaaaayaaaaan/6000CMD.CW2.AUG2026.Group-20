@@ -67,7 +67,7 @@ const VisibilityTrigger = React.forwardRef(
         size='sm'
         variant='ghost'
         height='calc(100% - {spacing.2})'
-        aria-label='Toggle password visibility'
+        aria-label='Toggle Password Visibility'
         {...props}
       />
     )
@@ -83,7 +83,7 @@ export const PasswordStrengthMeter = React.forwardRef(
     const label = customLabel ?? defaultLabel
 
     return (
-      <Stack align='flex-end' gap='1' ref={ref} role='meter' aria-label='Estimated password strength'
+      <Stack align='flex-end' gap='1' ref={ref} role='meter' aria-label='Estimated Password Strength'
         aria-valuemin={0} aria-valuemax={max} aria-valuenow={value} aria-valuetext={label} {...rest}>
         <HStack width='full'>
           {Array.from({ length: max }).map((_, index) => (
@@ -137,9 +137,9 @@ export function PasswordStrengthFeedback({ id, password = '', confirmation = '',
   if (hasNonNumber) nonNumericMet = true
   if (decimalOnly) nonNumericMet = false
   const requirements = [
-    { id: 'length', label: `At least ${minLength} characters (${characters.length}/${minLength})`, met: password ? lengthMet : null },
-    { id: 'non-numeric', label: 'Must not be entirely numeric', met: nonNumericMet },
-    { id: 'confirmation', label: 'Passwords match', met: confirmation ? password === confirmation : null },
+    { id: 'length', label: `At Least ${minLength} Characters (${characters.length}/${minLength})`, met: password ? lengthMet : null },
+    { id: 'non-numeric', label: 'Must Not Be Entirely Numeric', met: nonNumericMet },
+    { id: 'confirmation', label: 'Passwords Match', met: confirmation ? password === confirmation : null },
   ]
   const strengthLabel = password ? ['Weak', 'Fair', 'Good', 'Strong'][strength - 1] : 'Not Entered'
 
@@ -152,7 +152,7 @@ export function PasswordStrengthFeedback({ id, password = '', confirmation = '',
     if (password && predictable) hints.push('Try a less predictable password.')
 
     return (
-      <Stack id={id} as='section' aria-label='Password requirements' w='full' gap='2' textAlign='left'>
+      <Stack id={id} as='section' aria-label='Password Requirements' w='full' gap='2' textAlign='left'>
         {password && <PasswordStrengthMeter value={strength} label={strengthLabel} w='full' />}
         {hints.length > 0 && <Text fontSize='xs' color='fg.muted' aria-live='polite'>{hints.join(' ')}</Text>}
       </Stack>
@@ -160,7 +160,7 @@ export function PasswordStrengthFeedback({ id, password = '', confirmation = '',
   }
 
   return (
-    <Stack id={id} as='section' aria-label='Password requirements' w='full' gap='3'
+    <Stack id={id} as='section' aria-label='Password Requirements' w='full' gap='3'
       textAlign='left' bg='blue.50' color='gray.700' borderWidth='1px' borderColor='blue.100'
       borderRadius='md' p='4'>
       <HStack justify='space-between' gap='2' flexWrap='wrap'>
@@ -174,7 +174,7 @@ export function PasswordStrengthFeedback({ id, password = '', confirmation = '',
         {requirements.map(({ id: requirementId, label, met }) => {
           const Icon = met === true ? LuCheck : LuCircle
           const color = met === false ? 'red.600' : met === true ? 'green.700' : 'gray.600'
-          const status = met === true ? 'Met' : met === false ? 'Not met' : 'Pending'
+          const status = met === true ? 'Met' : met === false ? 'Not Met' : 'Pending'
           return (
             <HStack as='li' key={requirementId} gap='2' align='start' color={color} fontSize='xs'>
               <Box as='span' pt='0.5' flexShrink='0'><Icon aria-hidden='true' /></Box>
@@ -184,12 +184,12 @@ export function PasswordStrengthFeedback({ id, password = '', confirmation = '',
         })}
       </Stack>
       <Box borderTopWidth='1px' borderColor='blue.100' pt='2'>
-        <Text fontSize='xs' fontWeight='medium' mb='1'>Also checked when saved</Text>
+        <Text fontSize='xs' fontWeight='medium' mb='1'>Also Checked When Saved</Text>
         <Text fontSize='xs' color='gray.600'>Avoid common passwords and passwords similar to your name, username or email.</Text>
       </Box>
       {password && strength < 4 && suggestions.length > 0 && (
         <Box>
-          <Text fontSize='xs' fontWeight='medium'>Strength tips (optional)</Text>
+          <Text fontSize='xs' fontWeight='medium'>Strength Tips (Optional)</Text>
           <Text fontSize='xs' color='gray.600'>{suggestions.join(' · ')}</Text>
         </Box>
       )}

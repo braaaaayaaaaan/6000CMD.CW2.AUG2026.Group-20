@@ -41,7 +41,7 @@ export function assetProcessingMessage(asset) {
       processing: "Processing",
       approved: "Ready",
       rejected: "Failed",
-      error: "Processing problem",
+      error: "Processing Problem",
     }[asset.processing_status] || "Unavailable"
   );
 }
