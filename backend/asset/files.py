@@ -9,6 +9,7 @@ import subprocess
 import sys
 import uuid
 import warnings
+import zlib
 from tempfile import TemporaryFile
 from contextlib import contextmanager
 from datetime import timedelta
@@ -26,7 +27,6 @@ from django.dispatch import receiver
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser
-from PIL import Image, UnidentifiedImageError
 
 from .models import (
     Asset,
@@ -81,6 +81,88 @@ def detect_type(file):
     return None
 
 
+# Bound request-side header work without opening metadata or decompressing pixels.
+IMAGE_REQUEST_MAX_PIXELS = 25_000_000
+JPEG_HEADER_MAX_MARKERS = 4096
+
+
+def image_header_dimensions(file, kind):
+    """Read PNG IHDR or JPEG SOF only; integrity belongs to the child worker."""
+    file.seek(0)
+    if kind == "png":
+        header = file.read(33)
+        if (
+            len(header) != 33
+            or header[:8] != b"\x89PNG\r\n\x1a\n"
+            or header[8:16] != b"\x00\x00\x00\x0dIHDR"
+            or zlib.crc32(header[12:29]) != struct.unpack(">I", header[29:33])[0]
+        ):
+            raise ValueError("Invalid PNG header.")
+        width, height, depth, color, compression, filtering, interlace = struct.unpack(
+            ">IIBBBBB", header[16:29]
+        )
+        depths = {
+            0: {1, 2, 4, 8, 16},
+            2: {8, 16},
+            3: {1, 2, 4, 8},
+            4: {8, 16},
+            6: {8, 16},
+        }
+        if (
+            depth not in depths.get(color, set())
+            or compression != 0
+            or filtering != 0
+            or interlace not in {0, 1}
+        ):
+            raise ValueError("Invalid PNG header.")
+        return width, height
+    if file.read(2) != b"\xff\xd8":
+        raise ValueError("Invalid JPEG header.")
+    start_of_frame = {
+        0xC0,
+        0xC1,
+        0xC2,
+        0xC3,
+        0xC5,
+        0xC6,
+        0xC7,
+        0xC9,
+        0xCA,
+        0xCB,
+        0xCD,
+        0xCE,
+        0xCF,
+    }
+    for _ in range(JPEG_HEADER_MAX_MARKERS):
+        prefix, marker = struct.unpack("BB", file.read(2))
+        if prefix != 0xFF or marker == 0:
+            raise ValueError("Invalid JPEG marker.")
+        if marker == 0xFF:  # Legal fill bytes; count these against the work budget.
+            file.seek(-1, 1)
+            continue
+        if marker in {0xD8, 0xD9, 0xDA} or 0xD0 <= marker <= 0xD7:
+            raise ValueError("JPEG frame header is missing.")
+        if marker == 0x01:  # TEM is standalone.
+            continue
+        length = struct.unpack(">H", file.read(2))[0]
+        if length < 2 or file.tell() + length - 2 > file.size:
+            raise ValueError("Invalid JPEG segment length.")
+        if marker in start_of_frame:
+            if length < 8:
+                raise ValueError("Invalid JPEG frame header.")
+            precision, height, width, components = struct.unpack(">BHHB", file.read(6))
+            if (
+                precision not in {8, 12, 16}
+                or not components
+                or length != 8 + 3 * components
+            ):
+                raise ValueError("Invalid JPEG frame header.")
+            return width, height
+        # Skip APP/EXIF/ICC/comment/table payloads without allocating or parsing them.
+        file.seek(length - 2, 1)
+    raise ValueError("JPEG header exceeds the marker inspection budget.")
+
+
 def validate_file(file, *, check_filename=True):
     if not file.size or file.size > settings.ASSET_UPLOAD_MAX_BYTES:
         raise ValidationError(
@@ -89,31 +171,45 @@ def validate_file(file, *, check_filename=True):
         )
     kind = detect_type(file)
     if kind is None:
-        raise ValidationError("Only valid JPG, PNG, MP4, and GLB files are supported.")
+        raise ValidationError(
+            "Only valid JPG/JPEG, PNG, MP4, and GLB files are supported."
+        )
     name = str(file.name)
-    if check_filename and ("\\" in name or "/" in name or "\x00" in name
-            or any(ord(char) < 32 for char in name) or PurePosixPath(name).suffix.lower() != "." + kind):
-        raise ValidationError("Use a safe filename with an extension matching the file content.")
+    extensions = {".jpg", ".jpeg"} if kind == "jpg" else {"." + kind}
+    if check_filename and (
+        "\\" in name
+        or "/" in name
+        or "\x00" in name
+        or any(ord(char) < 32 for char in name)
+        or PurePosixPath(name).suffix.lower() not in extensions
+    ):
+        raise ValidationError(
+            "Use a safe filename with an extension matching the file content."
+        )
     position = file.tell()
     try:
         file.seek(0)
         if kind in {"png", "jpg"}:
-            with warnings.catch_warnings():
-                warnings.simplefilter("error", Image.DecompressionBombWarning)
-                with Image.open(file) as image:
-                    if image.format != {"png": "PNG", "jpg": "JPEG"}[kind] or image.width * image.height > 25_000_000:
-                        raise ValueError()
-                    image.verify()
-                file.seek(0)
-                with Image.open(file) as image:
-                    image.load()
+            width, height = image_header_dimensions(file, kind)
+            if width <= 0 or height <= 0 or width * height > IMAGE_REQUEST_MAX_PIXELS:
+                raise ValueError("Invalid image dimensions or pixel limit exceeded.")
         elif kind == "glb":
             validate_glb_container(file, file.size)
         else:
             validate_mp4(file, file.size)
-    except (ValueError, OSError, SyntaxError, struct.error, KeyError, TypeError, AttributeError, RecursionError,
-            UnidentifiedImageError, Image.DecompressionBombWarning, Image.DecompressionBombError):
-        raise ValidationError("The file is malformed, truncated, or uses unsupported external resources.") from None
+    except (
+        ValueError,
+        OSError,
+        SyntaxError,
+        struct.error,
+        KeyError,
+        TypeError,
+        AttributeError,
+        RecursionError,
+    ):
+        raise ValidationError(
+            "The file is malformed, truncated, or uses unsupported external resources."
+        ) from None
     finally:
         file.seek(position)
     return kind
@@ -149,7 +245,10 @@ def validate_glb_container(file, size):
             file.seek(length, 1)
         else:
             raise ValueError()
-    if not isinstance(document, dict) or document.get("asset", {}).get("version") != "2.0":
+    if (
+        not isinstance(document, dict)
+        or document.get("asset", {}).get("version") != "2.0"
+    ):
         raise ValueError()
 
     def private_resources(value):
@@ -162,12 +261,20 @@ def validate_glb_container(file, size):
         elif isinstance(value, list):
             for child in value:
                 private_resources(child)
+
     private_resources(document)
     buffers = document.get("buffers", [])
-    if len(buffers) > 1 or (buffers and not 0 <= binary_size - buffers[0]["byteLength"] <= 3):
+    if len(buffers) > 1 or (
+        buffers and not 0 <= binary_size - buffers[0]["byteLength"] <= 3
+    ):
         raise ValueError()
     for view in document.get("bufferViews", []):
-        if view.get("buffer") != 0 or not buffers or view.get("byteOffset", 0) < 0 or view["byteLength"] < 0:
+        if (
+            view.get("buffer") != 0
+            or not buffers
+            or view.get("byteOffset", 0) < 0
+            or view["byteLength"] < 0
+        ):
             raise ValueError()
         if view.get("byteOffset", 0) + view["byteLength"] > buffers[0]["byteLength"]:
             raise ValueError()
@@ -177,7 +284,18 @@ def validate_mp4(file, size):
     """Bounded ISO-BMFF structural checks; not a codec decoder/transcoder."""
     budget = [0]
     video = [False]
-    containers = {b"moov", b"trak", b"mdia", b"minf", b"stbl", b"dinf", b"edts", b"mvex", b"moof", b"traf"}
+    containers = {
+        b"moov",
+        b"trak",
+        b"mdia",
+        b"minf",
+        b"stbl",
+        b"dinf",
+        b"edts",
+        b"mvex",
+        b"moof",
+        b"traf",
+    }
 
     def boxes(start, end, depth=0):
         if depth > 12:
@@ -197,14 +315,29 @@ def validate_mp4(file, size):
                 length = end - start
             if length < header or start + length > end:
                 raise ValueError()
-            minimum = {b"ftyp": 8, b"mvhd": 100, b"tkhd": 84, b"mdhd": 24, b"hdlr": 24,
-                       b"stsd": 8, b"stts": 8, b"stsc": 8, b"stsz": 12, b"stco": 8, b"co64": 8}
+            minimum = {
+                b"ftyp": 8,
+                b"mvhd": 100,
+                b"tkhd": 84,
+                b"mdhd": 24,
+                b"hdlr": 24,
+                b"stsd": 8,
+                b"stts": 8,
+                b"stsc": 8,
+                b"stsz": 12,
+                b"stco": 8,
+                b"co64": 8,
+            }
             if length - header < minimum.get(kind, 0):
                 raise ValueError()
             if kind == b"hdlr":
                 file.seek(start + header + 8)
                 video[0] |= file.read(4) == b"vide"
-            children = boxes(start + header, start + length, depth + 1) if kind in containers else []
+            children = (
+                boxes(start + header, start + length, depth + 1)
+                if kind in containers
+                else []
+            )
             if kind == b"dref":
                 file.seek(start + header)
                 flags, count = struct.unpack(">II", file.read(8))
@@ -224,14 +357,17 @@ def validate_mp4(file, size):
                 raise ValueError()
             if kind == b"minf" and not {b"dinf", b"stbl"}.issubset(children):
                 raise ValueError()
-            if kind == b"stbl" and (not {b"stsd", b"stts", b"stsc", b"stsz"}.issubset(children)
-                    or not {b"stco", b"co64"}.intersection(children)):
+            if kind == b"stbl" and (
+                not {b"stsd", b"stts", b"stsc", b"stsz"}.issubset(children)
+                or not {b"stco", b"co64"}.intersection(children)
+            ):
                 raise ValueError()
             if kind == b"mdat" and length == header:
                 raise ValueError()
             found.append(kind)
             start += length
         return found
+
     if not {b"ftyp", b"moov", b"mdat"}.issubset(boxes(0, size)) or not video[0]:
         raise ValueError()
 
@@ -259,7 +395,9 @@ class AssetMultiPartParser(MultiPartParser):
         request = parser_context["request"]
         if getattr(request._request, "asset_upload_too_large", False):
             raise ValidationError({"url": "The uploaded file exceeds the size limit."})
-        if result.files and (set(result.files) != {"url"} or len(result.files.getlist("url")) != 1):
+        if result.files and (
+            set(result.files) != {"url"} or len(result.files.getlist("url")) != 1
+        ):
             raise ValidationError({"url": "Upload exactly one asset file per request."})
         return result
 
@@ -289,7 +427,9 @@ def staged_file(serializer):
             serializer.validated_data["url"] = name
             with field.storage.open(name, "rb") as stored:
                 if file_digest(stored) != serializer.validated_data["sha256"]:
-                    raise ValidationError("The stored upload failed its integrity check. Try again.")
+                    raise ValidationError(
+                        "The stored upload failed its integrity check. Try again."
+                    )
         yield
     except BaseException:
         if name:
@@ -453,7 +593,9 @@ def run_validation_process(
             try:
                 diagnostics = bool(os.read(process.stderr.fileno(), 1))
             except BlockingIOError:
-                raise RuntimeError("File validation did not finish its diagnostics.") from None
+                raise RuntimeError(
+                    "File validation did not finish its diagnostics."
+                ) from None
         if output.tell() > output_limit:
             raise RuntimeError("File validation returned excessive output.")
         output.seek(0)
@@ -497,18 +639,14 @@ def validate_image(key, expected_type):
                     warnings.filterwarnings(
                         "error", category=UserWarning, module=r"PIL\..*"
                     )
-                    with Image.open(
-                        original, formats=list(formats.values())
-                    ) as image:
+                    with Image.open(original, formats=list(formats.values())) as image:
                         if image.format != formats[expected_type]:
                             raise ValidationError(
                                 "Image content does not match its uploaded type."
                             )
                         image.verify()
                     original.seek(0)
-                    with Image.open(
-                        original, formats=list(formats.values())
-                    ) as image:
+                    with Image.open(original, formats=list(formats.values())) as image:
                         # Validate every PNG frame while keeping only the current
                         # frame in use; no resizing, conversion or saving occurs.
                         for frame in range(getattr(image, "n_frames", 1)):
@@ -558,28 +696,40 @@ def validate_video(key):
 
     configured = settings.ASSET_FFPROBE_EXECUTABLE
     if not Path(configured).is_absolute() and Path(configured).name != configured:
-        raise RuntimeError("Configure FFprobe using an absolute path or executable name.")
+        raise RuntimeError(
+            "Configure FFprobe using an absolute path or executable name."
+        )
     executable = shutil.which(configured)
     if not executable:
         raise RuntimeError("FFprobe is unavailable. The video remains quarantined.")
     arguments = [
         str(Path(executable).resolve()),
-        "-v", "error",
-        "-protocol_whitelist", "file",
-        "-format_whitelist", "mov",
-        "-enable_drefs", "0",
-        "-use_absolute_path", "0",
-        "-threads", "1",
+        "-v",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-format_whitelist",
+        "mov",
+        "-enable_drefs",
+        "0",
+        "-use_absolute_path",
+        "0",
+        "-threads",
+        "1",
         # Uppercase V excludes attached pictures/cover art from video streams.
-        "-select_streams", "V",
+        "-select_streams",
+        "V",
         "-show_entries",
         "format=format_name,duration:stream=codec_type,codec_name,width,height,duration:error=code",
         "-show_error",
-        "-of", "json",
-        "-i", str(source),
+        "-of",
+        "json",
+        "-i",
+        str(source),
     ]
     exit_code, metadata, diagnostics = run_validation_process(
-        arguments, VIDEO_VALIDATION_TIMEOUT_SECONDS,
+        arguments,
+        VIDEO_VALIDATION_TIMEOUT_SECONDS,
         output_limit=VIDEO_PROBE_OUTPUT_MAX_BYTES,
     )
     if exit_code != 0 or "error" in metadata:
@@ -628,7 +778,9 @@ def validate_video(key):
             or not codec.strip()
             or codec in {"unknown", "none", "N/A"}
         ):
-            raise ValidationError("Video stream metadata is incomplete or unrecognisable.")
+            raise ValidationError(
+                "Video stream metadata is incomplete or unrecognisable."
+            )
         width, height = stream.get("width"), stream.get("height")
         if (
             type(width) is not int
@@ -676,7 +828,8 @@ def validate_glb(key):
                 "--permission",
                 "--allow-fs-read=" + str(package.resolve()),
                 "--max-old-space-size=512",
-                "-e", GLB_VALIDATION_SCRIPT,
+                "-e",
+                GLB_VALIDATION_SCRIPT,
                 str(package.resolve()),
                 str(GLB_MAX_ACCESSOR_ELEMENTS),
                 str(GLB_MAX_TOTAL_ACCESSOR_ELEMENTS),
@@ -684,10 +837,14 @@ def validate_glb(key):
             GLB_VALIDATION_TIMEOUT_SECONDS,
             stdin=original,
             # Node's crypto initialization needs SystemRoot on Windows.
-            env={"NODE_OPTIONS": "", **(
-                {"SystemRoot": os.environ["SystemRoot"]}
-                if os.name == "nt" and "SystemRoot" in os.environ else {}
-            )},
+            env={
+                "NODE_OPTIONS": "",
+                **(
+                    {"SystemRoot": os.environ["SystemRoot"]}
+                    if os.name == "nt" and "SystemRoot" in os.environ
+                    else {}
+                ),
+            },
         )
     if exit_code != 0 or diagnostics:
         raise RuntimeError("GLB validation could not finish.")
@@ -711,7 +868,9 @@ def validate_glb(key):
         if outcome["warnings"]:
             logger.warning(
                 "glb_validation_warnings file=%s count=%s codes=%s",
-                key, outcome["warnings"], codes,
+                key,
+                outcome["warnings"],
+                codes,
             )
         return True
     raise RuntimeError("GLB validation returned incomplete output.")
@@ -850,7 +1009,9 @@ def promote_asset(job):
             if current.sha256:
                 with storage.open(target_key, "rb") as stored:
                     if file_digest(stored) != current.sha256:
-                        raise ValidationError("The quarantined upload failed its integrity check.")
+                        raise ValidationError(
+                            "The quarantined upload failed its integrity check."
+                        )
             # Copying may take time; an expired claim must never publish.
             if not live_claim.filter(processing_lease_until__gt=timezone.now()).update(
                 url=target_key,
@@ -963,7 +1124,9 @@ def process_uploads(limit=100, retry_errors=False, asset_id=None):
         recover_processing_jobs()
     processed = 0
     for _ in range(limit):
-        job = claim_processing_job(retry_errors=retry_errors, cutoff=cutoff, asset_id=asset_id)
+        job = claim_processing_job(
+            retry_errors=retry_errors, cutoff=cutoff, asset_id=asset_id
+        )
         if job is None:
             break
         try:
@@ -971,9 +1134,11 @@ def process_uploads(limit=100, retry_errors=False, asset_id=None):
         except ValidationError as error:
             status, detail = (
                 Asset.ProcessingStatus.REJECTED,
-                str(error.detail[0])
-                if isinstance(error.detail, list) and len(error.detail) == 1
-                else "This file did not pass validation. Upload a replacement.",
+                (
+                    str(error.detail[0])
+                    if isinstance(error.detail, list) and len(error.detail) == 1
+                    else "This file did not pass validation. Upload a replacement."
+                ),
             )
         except Exception:
             logger.exception("asset_processing_failed", extra={"asset_id": str(job.pk)})
