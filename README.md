@@ -161,6 +161,13 @@ python backend/manage.py makemigrations --check --dry-run --settings=backend.tes
 The tests use an in-memory SQLite database and a memory email backend. Production
 PostgreSQL concurrency and actual SMTP/browser flows still need deployment testing.
 
+## Manual security testing kit
+
+See [security_tests/README.md](security_tests/README.md) for reproducible image,
+MP4 and GLB fixture generators, local verification scripts, and the combined manual
+file validation checklist. The scripts prepare inputs; application checks are
+performed manually using the README instructions.
+
 ## Private asset storage and recovery
 
 New asset files live on the Django host under `DJANGO_ASSET_PRIVATE_ROOT` (default:
