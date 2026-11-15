@@ -1,179 +1,184 @@
 # DAM File Validation Testing Kit
 
-This testing kit helps you prepare and check sample files for security testing of the Digital Asset Management (DAM) application. It covers **images, MP4 videos and GLB 3D models**, including valid files and deliberately malformed examples.
+This guide explains how to generate sample files and manually test the ManticAI application's file security controls. It includes valid and deliberately malformed images, videos and 3D models.
 
-The scripts **only generate and verify test files**. They do not upload files, sign in, change application settings, test the running application or scan the server. You will carry out the application tests manually using the cases below.
+The scripts generate and verify sample files only. They do not upload files, test the running application or perform security scans.
 
-## 1. Before You Start
+## 1. First-time setup
 
-### Requirements
+### Step 1: Install the required software
 
-Make sure the following tools are available:
+| Software | Requirement |
+| --- | --- |
+| Git | Download the project |
+| Python | 3.12 recommended |
+| Node.js | 20.9.0 or newer, with npm |
+| FFmpeg and FFprobe | Generate and verify videos; both must be on PATH |
+| Bash | Included on macOS/Linux; use Git Bash or WSL on Windows |
 
-- **Python 3.9+** and **Pillow** for preparing and checking images. Pillow is already included in the project's Python environment.
-- **FFmpeg and FFprobe** on your `PATH` for preparing and inspecting videos.
-- **Node.js** and the project's `frontend/node_modules/gltf-validator` package for independent Khronos GLB validation. If the package is missing, run `npm ci` inside `frontend/`.
-- **Bash** for the video-generation script (macOS, Linux, WSL or Git Bash).
+If you already installed the application using the [main README](../README.md), skip cloning and dependency installation.
 
-You can use your existing Python environment. Alternatively, create a separate environment for these tests:
+### Step 2: Download the project
 
 ```bash
-python3 -m venv security_tests/.venv
-source security_tests/.venv/bin/activate
-python -m pip install Pillow
+git clone https://github.com/braaaaayaaaaan/6000CMD.CW2.AUG2026.Group-20.git
+cd 6000CMD.CW2.AUG2026.Group-20
 ```
 
-> **Important:** Run the commands in this README from the **repository root**, with your Python environment activated. If you are using the existing macOS project environment, activate it with `source .venv/bin/activate` instead.
+Run all subsequent commands from the project root unless stated otherwise.
 
-## 2. Generate and Verify the Test Files
+### Step 3: Install dependencies
 
-Run these three commands in order:
+**macOS / Linux**
 
 ```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r backend/requirements.txt
+cd frontend
+npm ci
+cd ..
+```
+
+**Windows (PowerShell)**
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r backend/requirements.txt
+cd frontend
+npm.cmd ci
+cd ..
+```
+
+If PowerShell blocks activation, use `.\.venv\Scripts\python.exe` instead of `python` for Python commands. The frontend dependencies include the Khronos GLB validator required for verification.
+
+Check your installation:
+
+```bash
+python --version
+node --version
+ffmpeg -version
+ffprobe -version
+```
+
+You do **not** need a database, SMTP account or running application to generate the sample files. These are needed only for normal manual application testing.
+
+## 2. Generate and verify the test files
+
+### macOS / Linux
+
+```bash
+source .venv/bin/activate
 python security_tests/make_dam_images_glb.py
 PYTHON=python bash security_tests/make_dam_videos.sh
 python security_tests/verify_fixtures.py
 ```
 
-Here's what each command does:
+### Windows (Git Bash)
 
-| Step | Script | What it does |
-| --- | --- | --- |
-| 1 | `make_dam_images_glb.py` | Creates seven image files (including the optional size-limit sample), four GLB files and an initial `manifest.csv`. |
-| 2 | `make_dam_videos.sh` | Creates four MP4 files and checks them using FFprobe. |
-| 3 | `verify_fixtures.py` | Checks the generated files, runs Khronos GLB validation, calculates SHA-256 checksums and updates the manifest to include videos. |
-
-**Check the verification result before proceeding.** If a command exits with a nonzero status, something failed during preparation or verification. Resolve the issue before using those files as evidence in your report.
-
-### Where are the files saved?
-
-By default, everything is saved in:
-
-```text
-security_tests/generated/
-```
-
-The `generated/` and `evidence/` folders are ignored by Git.
-
-**Be careful when running the scripts again:** generators overwrite their named test files, and verification overwrites its reports, manifest and checksum inventory. Save any evidence you want to keep before regenerating the files.
-
-File outputs can also vary between library or encoder versions, so record the versions of the tools you used and the actual checksums generated on your machine.
-
-### Optional: Use a different output folder
-
-If you want to save the files elsewhere, provide the **same output path** to all three commands:
+Open Git Bash in the project root after installing the Windows dependencies above:
 
 ```bash
-python security_tests/make_dam_images_glb.py --output /tmp/dam-security-inputs
-PYTHON=python bash security_tests/make_dam_videos.sh /tmp/dam-security-inputs
-python security_tests/verify_fixtures.py --output /tmp/dam-security-inputs
+source .venv/Scripts/activate
+python security_tests/make_dam_images_glb.py
+PYTHON=python bash security_tests/make_dam_videos.sh
+python security_tests/verify_fixtures.py
 ```
 
-### Optional: Verify files in stages
+If using WSL instead, install the Linux dependencies and create a separate Linux virtual environment. Do not reuse the Windows virtual environment in WSL.
 
-If you have only prepared the images and GLBs, you can temporarily skip video verification:
+| Script | Purpose |
+| --- | --- |
+| `make_dam_images_glb.py` | Generates seven images, four GLB models and an initial manifest. |
+| `make_dam_videos.sh` | Generates four MP4 videos and checks them using FFprobe. |
+| `verify_fixtures.py` | Checks the samples, runs Khronos GLB validation, calculates SHA-256 checksums and updates the manifest. |
+
+The files and verification reports are saved in `security_tests/generated/`. The `generated/` and `evidence/` folders are ignored by Git.
+
+Resolve any failed commands before proceeding. Running the scripts again overwrites named samples and verification reports, so save existing evidence first. Record tool versions and actual checksums because outputs may vary across versions.
+
+### Optional verification commands
+
+Verify images and GLBs before generating videos:
 
 ```bash
 python security_tests/verify_fixtures.py --skip-videos
 ```
 
-To run only the independent Khronos GLB checks:
+Run only the Khronos GLB checks:
 
 ```bash
 node security_tests/verify_glbs.cjs
 ```
 
-You can also use `--skip-khronos` for initial checks if Node.js or the validator package is unavailable. However, **skipping Khronos does not prove that the GLB files are valid**.
+The `--skip-khronos` option is available for preliminary checks, but full verification must run without skip flags.
 
-Before claiming that all test files have been verified, run the full verification command **without any skip flags**.
+To use a different output folder (Bash), pass the same folder to every script:
 
-## 3. Understanding the Malformed Test Files
-
-Some files are deliberately damaged in specific ways to check whether the application detects unsafe or invalid content.
-
-| Test file or technique | What it is designed to check |
-| --- | --- |
-| **Corrupted PNG** | The zlib stream checksum is altered while the PNG chunk CRCs are rebuilt. Pillow's `verify()` should pass, but a full `load()` should fail. This checks whether the application actually decodes image content. |
-| **GLB with a metadata URI** | The URI is stored in metadata and does not fetch an external resource. This checks whether the DAM's recursive URI restrictions reject it, even though Khronos should consider the GLB format valid. |
-| **Broken GLB** | The independent Khronos validator should report errors. |
-| **GLB with an invalid floating-point accessor** | The validator should specifically report `ACCESSOR_INVALID_FLOAT` for a NaN value. |
-
-The GLB validator saves JSON reports beside the GLB files. It expects **zero errors** for the valid GLB and the metadata-URI GLB, and errors for the two invalid GLBs.
-
-> **Remember:** These are expected results, not proof that the application has passed. A worker status of `error` means processing could not complete. Investigate it rather than treating it as a successful security rejection.
-
-## 4. Set Up the Application for Manual Testing
-
-Before uploading the generated files:
-
-1. Start a **disposable local application instance** using the instructions in the [main project README](../README.md).
-2. Prepare disposable **Admin, Editor and Viewer** accounts. They should have completed email verification and MFA.
-3. Ensure FFprobe, Node.js and the Khronos validator package are accessible to the backend.
-4. Prepare somewhere to record each test's **actual result, Pass / Fail / Blocked status, and evidence**. You can use your report or notes; a separate spreadsheet is not required.
-5. Keep the generated checksums, verification reports, validator output, upload responses, processing statuses and screenshots.
-
-### API requests for specific tests
-
-Some tests require direct authenticated API requests, rather than just clicking through the interface.
-
-| Action | Endpoint | Notes |
-| --- | --- | --- |
-| Upload an asset | `POST /assets/` | Multipart fields: `name`, `description`, `url` |
-| Replace an asset | `PATCH /assets/<id>/` | Creates a new asset version |
-
-For MIME spoofing and role checks, reuse the application's normal session and CSRF handling. You can inspect a successful request in your browser's **Network** panel and adapt it in an API client.
-
-**Do not commit session cookies, access tokens or signed media links as evidence.** Redact them from screenshots and logs.
-
-### Optional: Test a smaller upload limit
-
-For the size-limit test, set the following in your **disposable backend environment**, then restart the backend:
-
-```env
-ASSET_UPLOAD_MAX_MB=1
+```bash
+python security_tests/make_dam_images_glb.py --output ./dam-security-inputs
+PYTHON=python bash security_tests/make_dam_videos.sh ./dam-security-inputs
+python security_tests/verify_fixtures.py --output ./dam-security-inputs
 ```
 
-This allows you to check whether the application enforces a **1 MiB limit** without generating a file over 100 MiB.
+## 3. Understand the special test files
 
-After testing, restore the original setting. This test only demonstrates enforcement of the reduced limit; it **does not verify the default 100 MiB boundary**.
+| File or technique | Purpose |
+| --- | --- |
+| `IMG06_overpixels.png` | Valid 6000 × 5000 PNG (30 million pixels), below 1 MiB. Tests the 25-million-pixel limit independently of file size. |
+| `IMG05_corrupted.png` | Altered zlib checksum with rebuilt PNG chunk CRCs. Pillow `verify()` should pass but full `load()` should fail. |
+| `GLB03_external.glb` | Contains a metadata URI that does not fetch a resource. Tests the application's stricter URI restrictions, even though Khronos should accept the format. |
+| `GLB02_broken.glb` | Contains structural errors that Khronos should detect. |
+| `GLB04_invalid_accessor.glb` | Contains a NaN value; Khronos should report `ACCESSOR_INVALID_FLOAT`. |
 
-## 5. Manual Test Cases
+Khronos JSON reports are saved beside the GLB files. Expect zero errors for GLB01 and GLB03, and errors for GLB02 and GLB04. These are fixture expectations, not application test results.
 
-All 20 cases below must be carried out against the running application. Generating the files successfully does **not** mean that the application passed the tests.
+## 4. Prepare the application for testing
 
-### Part A: Media Upload Validation (Tests 01–14)
+1. Follow the [main README](../README.md) to start a separate local test instance with a fresh database and separate private/media storage. Alternatively, follow the [isolated ZAP guide](../docs/owasp-zap.md) on the `test/owasp-zap` branch for SQLite, synthetic accounts and captured emails.
+2. Prepare Admin, Editor and Viewer accounts. Complete email verification and MFA for each.
+3. Ensure the backend can access FFprobe, Node.js and the Khronos validator.
+4. Open `http://127.0.0.1:3000/login` for the normal local setup and sign in as an Editor for the media tests.
+5. Prepare a place to record actual results, screenshots and Pass / Fail / Blocked outcomes.
 
-Upload each file while signed in as an **Editor**.
+### API requests
 
-For every upload, record the filename, HTTP response, asset/version ID (if created), final `processing_status`, processing details and evidence. The backend status `approved` is shown as **Ready** in the interface.
+Some tests require direct API requests rather than the interface.
+
+| Action | Endpoint | Multipart fields |
+| --- | --- | --- |
+| Upload | `POST /assets/` | `name`, `description`, `url` |
+| Replace | `PATCH /assets/<id>/` | `url` containing the replacement file |
+
+A metadata-only edit does not create a new version. Use the browser developer tools Network panel to inspect successful requests, then adapt them in an API client with the normal session and CSRF handling. Never include cookies, access tokens or signed media URLs in shared evidence.
+
+## 5. Manual test cases
+
+### Part A: Media upload validation (01–14)
+
+Upload each file as an Editor. Record the HTTP response, asset/version ID if created, final processing status and evidence.
 
 | ID | File | Expected result |
 | --- | --- | --- |
-| 01 | `IMG01_valid.jpg` | Accepted and progresses from Pending → Processing → Ready. |
-| 02 | `IMG02_valid.jpeg` | Accepted and progresses from Pending → Processing → Ready. |
-| 03 | `IMG03_valid.png` | Accepted and progresses from Pending → Processing → Ready. |
-| 04 | `IMG04_fake.png` | Rejected with HTTP 400. No asset or version is created. |
-| 05 | `IMG05_corrupted.png` | Initially accepted into private quarantine, then rejected by the worker. Must never become Ready. |
-| 06 | `IMG06_wide.png` | Becomes Ready. The image has 10 million total pixels, even though its width exceeds 4K. |
-| 07 | `VID01_valid.mp4` | Accepted and becomes Ready. |
-| 08 | `VID02_fake.mp4` | Rejected with HTTP 400. No asset or version is created. |
-| 09 | `VID03_broken.mp4` | Rejected with HTTP 400. No asset or version is created. |
+| 01 | `IMG01_valid.jpg` | Accepted; becomes Ready. |
+| 02 | `IMG02_valid.jpeg` | Accepted; becomes Ready. |
+| 03 | `IMG03_valid.png` | Accepted; becomes Ready. |
+| 04 | `IMG04_fake.png` | HTTP 400; no asset or version created. |
+| 05 | `IMG05_corrupted.png` | Accepted into quarantine, then rejected by the worker; never Ready. |
+| 06 | `IMG06_overpixels.png` | HTTP 400 before asset/version creation; exceeds 25 million pixels. |
+| 07 | `VID01_valid.mp4` | Accepted; becomes Ready. |
+| 08 | `VID02_fake.mp4` | HTTP 400; no asset or version created. |
+| 09 | `VID03_broken.mp4` | HTTP 400; no asset or version created. |
 | 10 | `VID04_over4k.mp4` | Accepted into quarantine, then rejected by the worker for excessive resolution. |
-| 11 | `GLB01_valid.glb` | Accepted and becomes Ready. Keep its zero-error Khronos validation report. |
-| 12 | `GLB02_broken.glb` | Rejected with HTTP 400. No asset or version is created. |
-| 13 | `GLB03_external.glb` | Rejected with HTTP 400 by the DAM's URI policy, even though its Khronos format validation is separate. |
-| 14 | `GLB04_invalid_accessor.glb` | Rejected by the worker. Keep the independent report showing `ACCESSOR_INVALID_FLOAT`. |
+| 11 | `GLB01_valid.glb` | Accepted; becomes Ready. Retain zero-error Khronos report. |
+| 12 | `GLB02_broken.glb` | HTTP 400; no asset or version created. |
+| 13 | `GLB03_external.glb` | HTTP 400 due to the application's URI policy, regardless of Khronos format validation. |
+| 14 | `GLB04_invalid_accessor.glb` | Rejected by the worker. Retain report showing `ACCESSOR_INVALID_FLOAT`. |
 
-**How to interpret the results:**
+Ready corresponds to the backend status `approved`. Some valid files progress through Pending and Processing too quickly to observe; use API metadata and processing details instead. For every HTTP 400 case, confirm that no new asset/version exists. A request-time rejection does not prove the worker inspected the file. Missing dependencies, timeouts and worker `error` statuses are operational failures, not successful security rejections.
 
-- Some files may process too quickly for you to see every intermediate status. Use the initial HTTP response, API metadata and processing details as supporting evidence.
-- An HTTP 400 response shows that the request was rejected **before asset creation**. It does not prove that the background worker inspected the file.
-- Missing dependencies, timeouts and worker `error` statuses are operational problems or **Blocked** tests, not successful security rejections.
-- For every HTTP 400 case, confirm that no new asset or version was created.
-
-### Part B: Upload and Delivery Security (Tests 15–20)
-
-These tests go beyond file format checks. They examine MIME handling, size limits, user permissions, quarantine protection, session-bound delivery and version replacement.
+### Part B: Upload and delivery security (15–20)
 
 #### Test 15: MIME Type Spoofing
 
@@ -182,6 +187,7 @@ These tests go beyond file format checks. They examine MIME handling, size limit
 Perform two authenticated multipart uploads:
 
 1. Upload the real `IMG03_valid.png`, but declare the file part as `text/plain`. **Expected:** The file is accepted and becomes Ready.
+
 2. Upload the text-based `IMG04_fake.png`, but declare the file part as `image/png`. **Expected:** HTTP 400, with no asset created.
 
 Change only the **file part's MIME type**, not the overall multipart request's `Content-Type` or boundary. Record both responses separately.
@@ -191,11 +197,14 @@ Change only the **file part's MIME type**, not the overall multipart request's `
 **Purpose:** Confirm that the backend enforces the configured maximum upload size.
 
 1. Set `ASSET_UPLOAD_MAX_MB=1` in the disposable backend and restart it.
-2. Upload `SHR01_over1MiB.png`.
+
+2. Upload `SHR01_over1MiB.png`. It is a valid 800 × 800 PNG, so this checks bytes rather than the pixel ceiling.
+
 3. **Expected:** HTTP 400, with no new asset created.
+
 4. Record the file's actual byte count and restore the original setting.
 
-In your report, clearly state that you tested a **reduced 1 MiB limit**. Testing the default **100 MiB** boundary requires a separate, valid, larger file.
+This case requires the separately configured instance described above; an unchanged ZAP instance keeps its own upload limit. In your report, clearly state that you tested a **reduced 1 MiB limit**. Testing the default **100 MiB** boundary requires a separate, valid, larger file.
 
 #### Test 17: Upload Permissions by User Role
 
@@ -221,8 +230,11 @@ Use the unapproved version of `IMG05_corrupted.png` from Test 05.
 While authenticated, try:
 
 1. Requesting `/assets/<id>/media-url/`.
+
 2. Accessing `/media/assets/<id>/?token=invalid`.
+
 3. Repeating the media request using **HEAD** and **Range** requests.
+
 4. Checking whether any observed storage or media path is publicly accessible.
 
 **Expected:** No media bytes should be returned while the file is **Pending, Processing or Rejected**. Private storage must not be publicly served.
@@ -234,9 +246,13 @@ Record the file's actual state when each request was made. If processing is too 
 **Purpose:** Confirm that approved files can be delivered correctly, but previously issued links stop working after the issuing session logs out.
 
 1. While authenticated, obtain a Ready PNG's URL through `/assets/<id>/media-url/`.
+
 2. Download the file and compare its SHA-256 checksum with `checksums.sha256`.
+
 3. Log out using the application.
+
 4. Retry the **same previously issued URL**.
+
 5. **Expected:** The file downloads successfully before logout, but access is denied after logout without returning file bytes.
 
 For a stronger check, open a second authenticated session for the **same user**. After logging out the session that issued the URL, retry that old URL while the second session remains signed in. It should still be denied.
@@ -248,25 +264,55 @@ Keep evidence of both successful delivery and post-logout denial, with tokens re
 **Purpose:** Confirm that a rejected replacement does not destroy or expose the previously approved version.
 
 1. Upload `IMG03_valid.png` and wait until it becomes Ready.
+
 2. Record the approved version ID, download URL and checksum.
+
 3. Replace it with `IMG05_corrupted.png`.
+
 4. Record the new version ID and wait for the replacement to be rejected.
+
 5. Confirm that the rejected replacement has **no usable media URL**.
+
 6. Confirm that the original approved file is still downloadable and has the **same checksum**.
+
 7. Confirm that the original approved version remains available in the shared library.
 
 **Expected:** The failed replacement is rejected without affecting the approved original.
 
-## 6. Recording Your Results
+## 6. Record your results
 
 For each case, record:
 
 - **Test ID and file or scenario**
+
 - **Expected result**
+
 - **Actual result**, including relevant HTTP responses and processing status
+
 - **Outcome:** Pass, Fail or Blocked
+
 - **Evidence:** screenshots, responses, checksums, processing details or validator reports
 
 Keep **separate evidence for each subcase**, especially tests involving multiple user roles, MIME declarations or sessions.
 
 > **Final reminder:** A generated test file is only a test input. You can report a security control as passing only after you have carried out the corresponding manual test and recorded what the application actually did.
+
+## 7. Troubleshooting
+
+| Symptom | Action |
+| --- | --- |
+| `No module named PIL` | Activate the project virtual environment and install `backend/requirements.txt` |
+| Missing FFmpeg / FFprobe | Install both executables and add them to PATH in the shell running generation/verification |
+| Cannot find `gltf-validator` | Run `npm ci` in `frontend/`; the checker resolves that package relative to this repository |
+| Missing `IMG06_overpixels.png` or video fixture | Regenerate using the current scripts and the same output directory; the old `IMG06_wide.png` is no longer a generated case |
+| Verification succeeds with skip flags | Repeat without skip flags before claiming the full inventory was verified |
+| Worker status `error` | Inspect backend processing details and dependencies; this is **Blocked**, not a security pass |
+
+Full fixture verification checks the construction and expected validator behaviour
+
+of deliberately invalid inputs. It does not certify that every generated file is
+
+safe to publish or that the application's 20 manual cases passed. Run the isolated
+
+application regressions separately using [Checks and tests](../README.md).
+
