@@ -155,7 +155,7 @@ export default function PreviewAssetMedia({
       <Script
         id="model-viewer"
         type="module"
-        src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js"
+        src={process.env.NEXT_PUBLIC_MODEL_VIEWER_URL || "https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js"}
         onError={() => setScriptError(true)}
       />
       {modelSource === src && <model-viewer

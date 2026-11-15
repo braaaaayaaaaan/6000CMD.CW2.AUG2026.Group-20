@@ -4,6 +4,9 @@ import { currentSession, setSession } from "./session";
 // Match the page hostname for host-only SameSite cookies (localhost vs 127.0.0.1).
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ||
   (typeof window !== "undefined" ? window.location.protocol + "//" + window.location.hostname + ":8000" : "http://127.0.0.1:8000")).replace(/\/+$/, "");
+if (process.env.NEXT_PUBLIC_ZAP === "1" && API_BASE_URL !== "https://127.0.0.2:8443") {
+  throw new Error("ZAP requires its dedicated isolated API.");
+}
 export const api = axios.create({ baseURL: API_BASE_URL, withCredentials: true, timeout: 30000 });
 let csrfToken = "";
 let csrfPending = null;
