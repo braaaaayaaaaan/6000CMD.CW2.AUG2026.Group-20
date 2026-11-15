@@ -2,7 +2,7 @@
 
 ManticAI is a shared digital asset management (DAM) system that allows users to securely upload, organise, search, preview and download digital assets.
 
-Group Project 6: Bryan Tan Zhu Wei and Soh Angelina
+Group Project 20: Bryan Tan Zhu Wei and Soh Angelina
 
 [Watch the application demo](https://github.com/user-attachments/assets/47abe49b-b2b4-4367-8bbb-b8620ab0321e)
 
