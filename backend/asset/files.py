@@ -28,6 +28,7 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser
 
+from .image_policy import IMAGE_MAX_PIXELS
 from .models import (
     Asset,
     AssetSeries,
@@ -82,7 +83,6 @@ def detect_type(file):
 
 
 # Bound request-side header work without opening metadata or decompressing pixels.
-IMAGE_REQUEST_MAX_PIXELS = 25_000_000
 JPEG_HEADER_MAX_MARKERS = 4096
 
 
@@ -191,7 +191,7 @@ def validate_file(file, *, check_filename=True):
         file.seek(0)
         if kind in {"png", "jpg"}:
             width, height = image_header_dimensions(file, kind)
-            if width <= 0 or height <= 0 or width * height > IMAGE_REQUEST_MAX_PIXELS:
+            if width <= 0 or height <= 0 or width * height > IMAGE_MAX_PIXELS:
                 raise ValueError("Invalid image dimensions or pixel limit exceeded.")
         elif kind == "glb":
             validate_glb_container(file, file.size)
@@ -562,7 +562,7 @@ async function inspect() {
   const warningCodes = [];
   for (const issue of issues.messages) {
     if (issue.severity === 1 && /^[A-Z0-9_]{1,80}$/.test(issue.code)) {
-      warningCodes.push(issue.code);
+      warningCodes.push(issue.code);xt
       if (warningCodes.length === 10) break;
     }
   }
@@ -620,20 +620,28 @@ def validate_image(key, expected_type):
     if not features.check_codec("jpg" if expected_type == "jpg" else "zlib"):
         raise RuntimeError("The required image decoder is unavailable.")
     storage = Asset._meta.get_field("url").storage
-    limit = settings.ASSET_IMAGE_MAX_PIXELS
+    limit = min(settings.ASSET_IMAGE_MAX_PIXELS, IMAGE_MAX_PIXELS)
     old_limit = Image.MAX_IMAGE_PIXELS
     old_truncated = ImageFile.LOAD_TRUNCATED_IMAGES
     Image.MAX_IMAGE_PIXELS = limit
     ImageFile.LOAD_TRUNCATED_IMAGES = False
     try:
         # Opening storage is outside the decoder error handler: missing files and
-        # filesystem failures are operational errors, not invalid-image results.
+        # filesystem failures are operational errors, not invalid-image results
         with storage.open(key, "rb") as original:
             try:
                 if validate_file(original, check_filename=False) != expected_type:
                     raise ValidationError(
                         "Image content does not match its uploaded type."
                     )
+                # Enforce the worker's own ceiling before opening a decoder,
+                # independently of the request-stage shared-limit check above
+                width, height = image_header_dimensions(original, expected_type)
+                if width <= 0 or height <= 0 or width * height > limit:
+                    raise ValidationError(
+                        f"Image exceeds the {limit:,}-pixel limit or has invalid dimensions."
+                    )
+                original.seek(0)
                 with warnings.catch_warnings():
                     warnings.simplefilter("error", Image.DecompressionBombWarning)
                     warnings.filterwarnings(
@@ -968,11 +976,8 @@ def copy_private_file(source, target_key):
 
 
 def promote_asset(job):
-    """Validate the claimed quarantine file, then copy and commit publication.
-
-    No public route calls this service. The source is removed only after the
-    database commits; rollback leaves the original quarantined file intact.
-    """
+    """Validate the claimed quarantine file, then copy and commit publication. """
+   
     if not is_quarantine_key(job.url.name) or not job.processing_token:
         raise ValueError("Only claimed quarantine files can be promoted.")
     live_claim = Asset.objects.filter(
