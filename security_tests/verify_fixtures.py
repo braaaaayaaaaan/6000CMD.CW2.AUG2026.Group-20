@@ -24,13 +24,18 @@ def verify_images(directory):
         ("IMG01_valid.jpg", "JPEG", (640, 360)),
         ("IMG02_valid.jpeg", "JPEG", (640, 360)),
         ("IMG03_valid.png", "PNG", (640, 360)),
-        ("IMG06_wide.png", "PNG", (5000, 2000)),
+        ("IMG06_overpixels.png", "PNG", (6000, 5000)),
         ("SHR01_over1MiB.png", "PNG", (800, 800)),
     ):
+        with Image.open(directory / filename) as image:
+            image.verify()
         with Image.open(directory / filename) as image:
             image.load()
             require((image.format, image.size) == (image_format, dimensions), f"Unexpected properties: {filename}")
         print(f"PASS {filename}: {image_format} {dimensions}")
+    oversized = directory / "IMG06_overpixels.png"
+    require(0 < oversized.stat().st_size < 1024 * 1024, "Pixel-limit PNG must be below the minimum supported 1 MiB upload limit")
+    print(f"PASS IMG06_overpixels.png: valid PNG, 30,000,000 pixels, {oversized.stat().st_size} bytes; pixel-only rejection input")
     require((directory / "IMG01_valid.jpg").read_bytes() == (directory / "IMG02_valid.jpeg").read_bytes(), "JPEG copies differ")
     require((directory / "SHR01_over1MiB.png").stat().st_size > 1024 * 1024, "Size fixture must exceed 1 MiB")
     try:

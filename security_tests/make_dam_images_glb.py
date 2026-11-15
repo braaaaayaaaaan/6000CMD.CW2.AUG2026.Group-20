@@ -78,7 +78,13 @@ def make_images(output):
     image.save(output / "IMG03_valid.png")
     (output / "IMG04_fake.png").write_text("This is plain text, not a PNG.\n")
     corrupt_png(output / "IMG03_valid.png", output / "IMG05_corrupted.png")
-    Image.new("RGB", (5000, 2000), "#197c80").save(output / "IMG06_wide.png")
+    # Valid compressed pixels: only the 30-million-pixel count violates policy.
+    oversized = output / "IMG06_overpixels.png"
+    with Image.new("RGB", (6000, 5000), "blue") as overpixels:
+        overpixels.save(oversized)
+    # Upload limits are positive whole MiB; fit even the minimum 1 MiB setting.
+    if not 0 < oversized.stat().st_size < 1024 * 1024:
+        raise ValueError("Pixel-limit fixture must remain below 1 MiB")
     # Seeded noise resists compression without creating an oversized pixel image.
     noise = random.Random(2026).randbytes(800 * 800 * 3)
     Image.frombytes("RGB", (800, 800), noise).save(output / "SHR01_over1MiB.png")
@@ -126,7 +132,9 @@ def write_manifest(output):
         "IMG03_valid.png": ("Ready / approved", "Genuine PNG"),
         "IMG04_fake.png": ("HTTP 400", "Plain text with .png suffix"),
         "IMG05_corrupted.png": ("Worker rejection", "Bad zlib checksum; valid PNG chunk CRCs"),
-        "IMG06_wide.png": ("Ready / approved", "5000 x 2000 pixels"),
+        "IMG06_overpixels.png": (
+            "HTTP 400", "Valid PNG; 6000 x 5000 = 30,000,000 pixels; below 1 MiB"
+        ),
         "SHR01_over1MiB.png": ("HTTP 400 only with 1 MiB limit", "Valid PNG exceeding 1 MiB"),
         "GLB01_valid.glb": ("Ready / approved", "Self-contained triangle"),
         "GLB02_broken.glb": ("HTTP 400", "Declared length exceeds actual length by 4 bytes"),

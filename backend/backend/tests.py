@@ -98,6 +98,32 @@ class EnvironmentParsingTests(SimpleTestCase):
                          ["localhost", "127.0.0.1"])
         self.assertEqual(list_environment("HOSTS", ("localhost",), {"HOSTS": ""}), [])
 
+    def test_image_pixel_setting_defaults_to_shared_maximum_and_only_allows_lowering(self):
+        base_dir = Path(__file__).resolve().parent.parent
+        environ = {**os.environ, "DJANGO_SETTINGS_MODULE": "backend.test_settings"}
+        environ.pop("ASSET_IMAGE_MAX_PIXELS", None)
+        script = (
+            "from django.conf import settings; "
+            "from asset.image_policy import IMAGE_MAX_PIXELS; "
+            "assert IMAGE_MAX_PIXELS == 25_000_000; "
+            "print(settings.ASSET_IMAGE_MAX_PIXELS)"
+        )
+        for value, expected in ((None, 25_000_000), ("25000000", 25_000_000),
+                                ("1000000", 1_000_000), ("25000001", None), ("0", None)):
+            with self.subTest(value=value):
+                result = subprocess.run(
+                    [sys.executable, "-B", "-c", script], cwd=base_dir,
+                    env={**environ, **({"ASSET_IMAGE_MAX_PIXELS": value} if value else {})},
+                    capture_output=True, text=True, timeout=30,
+                )
+                if expected is None:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("ASSET_IMAGE_MAX_PIXELS", result.stderr)
+                    self.assertIn("between 1 and 25000000", result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(int(result.stdout), expected)
+
     def test_origin_configuration_rejects_paths_credentials_and_header_injection(self):
         for value in ("localhost:3000", "https://example.com/", "https://user:password@example.com",
                       "https://example.com;script-src", "https://example.com\r\nInjected: yes",

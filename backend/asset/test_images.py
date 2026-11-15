@@ -25,6 +25,7 @@ from .files import (
     validate_image,
 )
 from .models import Asset
+from .image_policy import IMAGE_MAX_PIXELS
 from .test_security import image_bytes
 
 
@@ -206,7 +207,9 @@ class ImageUploadTests(TestCase):
     def test_pixel_limit_boundaries_without_allocating_large_images(self):
         for width, height, accepted in (
             (5000, 5000, True),
+            (25_000_001, 1, False),
             (5001, 5000, False),
+            (6000, 5000, False),
             (0, 3, False),
         ):
             content = change_png_chunk(
@@ -223,9 +226,73 @@ class ImageUploadTests(TestCase):
                 if accepted:
                     self.assertIsNone(response.data["url"])
 
+    @override_settings(ASSET_IMAGE_MAX_PIXELS=IMAGE_MAX_PIXELS)
+    def test_valid_image_at_shared_pixel_boundary_is_approved_by_real_worker(self):
+        with Image.new("L", (5000, 5000), 127) as image:
+            for image_format, filename in (("PNG", "boundary.png"), ("JPEG", "boundary.jpeg")):
+                with self.subTest(image_format=image_format):
+                    output = io.BytesIO()
+                    image.save(output, format=image_format)
+                    content = output.getvalue()
+                    self.assertLess(len(content), 1024 * 1024)
+                    asset = self.process(self.upload(content, filename))
+                    self.assertTrue(asset.is_published)
+                    self.assertEqual(self.download(asset)[1], content)
+
+    def test_valid_oversized_png_is_rejected_independently_before_decoding(self):
+        output = io.BytesIO()
+        with Image.new("RGB", (6000, 5000), "blue") as image:
+            image.save(output, format="PNG")
+        content = output.getvalue()
+        self.assertLess(len(content), 1024 * 1024)
+        # Establish that excessive pixels, not corruption, explain rejection.
+        with Image.open(io.BytesIO(content)) as image:
+            image.verify()
+        with Image.open(io.BytesIO(content)) as image:
+            image.load()
+            self.assertEqual(image.size, (6000, 5000))
+        count = Asset.objects.count()
+        with patch("PIL.Image.open") as opened, patch("asset.views.staged_file") as staged:
+            response = self.upload(content, "IMG06_overpixels.png")
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(Asset.objects.count(), count)
+        opened.assert_not_called()
+        staged.assert_not_called()
+
+        # Simulate a quarantined upload admitted by an earlier/missed API check.
+        response = self.upload()
+        asset = Asset.objects.get(pk=response.data["id"])
+        Path(asset.url.path).write_bytes(content)
+        for configured in (IMAGE_MAX_PIXELS, IMAGE_MAX_PIXELS + 1):
+            with self.subTest(configured=configured), override_settings(
+                ASSET_IMAGE_MAX_PIXELS=configured
+            ), patch("asset.files.validate_file", return_value="png"), patch(
+                "PIL.Image.open"
+            ) as opened:
+                with self.assertRaisesMessage(ValidationError, "25,000,000-pixel limit"):
+                    validate_image(asset.url.name, "png")
+                opened.assert_not_called()
+
     @override_settings(ASSET_IMAGE_MAX_PIXELS=8)
     def test_lower_worker_pixel_limit_is_enforced(self):
         self.process(self.upload(), "rejected")  # Real 3x3 image exceeds 8 pixels.
+
+    @override_settings(ASSET_IMAGE_MAX_PIXELS=8)
+    def test_lower_worker_pixel_limit_is_checked_before_pillow_opens(self):
+        response = self.upload()  # API independently admits this real 3x3 image.
+        self.assertEqual(response.status_code, 201, response.data)
+        asset = Asset.objects.get(pk=response.data["id"])
+        with patch("PIL.Image.open") as opened:
+            with self.assertRaisesMessage(ValidationError, "8-pixel limit"):
+                validate_image(asset.url.name, "png")
+            opened.assert_not_called()
+
+    @override_settings(ASSET_IMAGE_MAX_PIXELS=8)
+    def test_image_at_lower_worker_pixel_boundary_is_approved(self):
+        output = io.BytesIO()
+        with Image.new("RGB", (4, 2), "blue") as image:
+            image.save(output, format="PNG")
+        self.process(self.upload(output.getvalue()))
 
     def test_wide_image_below_pixel_limit_is_approved(self):
         output = io.BytesIO()
