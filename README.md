@@ -1,6 +1,10 @@
 # digital-asset-management
 Digital Asset Management System
 
+For disposable OWASP ZAP testing on `test/owasp-zap`, see the
+[isolated SQLite testing guide](docs/owasp-zap.md). It provides separate HTTPS
+loopback addresses, storage, secrets and accounts without launching scans.
+
 Group Project 6
 - Bryan Tan Zhu Wei
 - Soh Angelina

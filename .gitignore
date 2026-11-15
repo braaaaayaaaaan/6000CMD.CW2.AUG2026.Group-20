@@ -171,6 +171,11 @@ __pypackages__/
 # TASK / TOOL SPECIFIC
 # ======================================================
 
+# Disposable OWASP ZAP database, secrets, captured mail and staged frontend.
+/.zap/
+# Generated scan reports stay local; review and redact before sharing.
+/reports/
+
 # Celery
 celerybeat-schedule
 celerybeat.pid
